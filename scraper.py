@@ -344,7 +344,10 @@ class CsRinScraper:
             # Markdown conversion
             clean_md = self._html_to_markdown(postbody)
 
-            post_url = f"{FORUM_URL}/viewtopic.php?p={post_id}#p{post_id}"
+            if topic_id and topic_id != "0":
+                post_url = f"{FORUM_URL}/viewtopic.php?t={topic_id}&p={post_id}#p{post_id}"
+            else:
+                post_url = f"{FORUM_URL}/viewtopic.php?p={post_id}#p{post_id}"
 
             posts.append(ForumPost(
                 post_id=post_id,

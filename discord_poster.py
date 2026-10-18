@@ -229,9 +229,13 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     if len(title) > 250:
         title = title[:247] + "..."
 
+    post_link = post.post_url
+    if post.topic_id and post.topic_id != "0" and "t=" not in post_link and "cs.rin.ru/forum/viewtopic.php" in post_link:
+        post_link = f"https://cs.rin.ru/forum/viewtopic.php?t={post.topic_id}&p={post.post_id}#p{post.post_id}"
+
     embed = discord.Embed(
         title=title,
-        url=post.post_url,
+        url=post_link,
         color=embed_color
     )
 
@@ -290,7 +294,7 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     # Direct Forum Source Link Field (NO repo links)
     embed.add_field(
         name="🌐 Forum Link",
-        value=f"👉 **[Open Thread on CS.RIN.RU]({post.post_url})**",
+        value=f"👉 **[Open Thread on CS.RIN.RU]({post_link})**",
         inline=False
     )
 
@@ -355,16 +359,20 @@ def create_op_update_embed(post: ForumPost) -> discord.Embed:
         cleaned_body = cleaned_body[:1190] + "..."
 
     clean_title = sanitize_game_title(post.topic_title)
+    post_link = post.post_url
+    if post.topic_id and post.topic_id != "0" and "t=" not in post_link and "cs.rin.ru/forum/viewtopic.php" in post_link:
+        post_link = f"https://cs.rin.ru/forum/viewtopic.php?t={post.topic_id}&p={post.post_id}#p{post.post_id}"
+
     embed = discord.Embed(
         title=f"📝 Main Post (OP) Updated: {clean_title}",
-        url=post.post_url,
+        url=post_link,
         description=cleaned_body or "*[Main post edited]*",
         color=COLOR_OP_UPDATE
     )
     embed.set_author(name=f"Author: {post.author}", url=post.author_profile_url or "")
     embed.add_field(
         name="🌐 Forum Link",
-        value=f"👉 **[Open Thread on CS.RIN.RU]({post.post_url})**",
+        value=f"👉 **[Open Thread on CS.RIN.RU]({post_link})**",
         inline=False
     )
     if post.images:
