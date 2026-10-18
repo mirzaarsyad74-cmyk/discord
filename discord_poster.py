@@ -51,6 +51,13 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     else:
         embed.set_author(name=author_name)
 
+    # Direct Forum Source Link Field
+    embed.add_field(
+        name="🌐 Forum Link",
+        value=f"👉 **[Open Thread on CS.RIN.RU]({post.post_url})**",
+        inline=False
+    )
+
     # If post includes images, set the primary image
     if post.images:
         embed.set_image(url=post.images[0])
@@ -84,6 +91,11 @@ def create_op_update_embed(post: ForumPost) -> discord.Embed:
         color=COLOR_OP_UPDATE
     )
     embed.set_author(name=f"Author: {post.author}", url=post.author_profile_url or "")
+    embed.add_field(
+        name="🌐 Forum Link",
+        value=f"👉 **[Open Thread on CS.RIN.RU]({post.post_url})**",
+        inline=False
+    )
     if post.images:
         embed.set_image(url=post.images[0])
     embed.set_footer(text=f"CS.RIN.RU • OP Post #{post.post_id} Edited")
