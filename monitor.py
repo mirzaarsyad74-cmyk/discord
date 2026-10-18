@@ -221,6 +221,45 @@ class ForumMonitor:
         self.save_state()
         return new_threads
 
+    def check_live_feed(self, forum_id: str = "10") -> List[ForumPost]:
+        """
+        Polls the global Atom feed across all games for newly published releases,
+        repacks, bypasses, and Steam version/build updates with full deduplication.
+        """
+        f_id = self.scraper.extract_forum_id(forum_id)
+        feed_state = self.state.setdefault("feed", {})
+        seen_pids = set(str(pid) for pid in feed_state.setdefault("seen_post_ids", []))
+        seen_fps = set(feed_state.setdefault("seen_fingerprints", []))
+
+        feed_posts = self.scraper.get_live_forum_feed(f_id)
+        if not feed_posts:
+            return []
+
+        # If first run of live feed, mark current entries as seen to avoid posting old history
+        if not seen_pids:
+            logger.info("Initializing global live feed. Marking existing entries as seen...")
+            for p in feed_posts:
+                seen_pids.add(str(p.post_id))
+                seen_fps.add(self.compute_post_fingerprint(p))
+            feed_state["seen_post_ids"] = list(seen_pids)
+            feed_state["seen_fingerprints"] = list(seen_fps)[-300:]
+            self.save_state()
+            return []
+
+        new_items = []
+        for p in feed_posts:
+            p_id_str = str(p.post_id)
+            fp = self.compute_post_fingerprint(p)
+            if p_id_str not in seen_pids and fp not in seen_fps:
+                new_items.append(p)
+                seen_pids.add(p_id_str)
+                seen_fps.add(fp)
+
+        feed_state["seen_post_ids"] = list(seen_pids)[-500:]
+        feed_state["seen_fingerprints"] = list(seen_fps)[-300:]
+        self.save_state()
+        return new_items
+
     def remove_topic(self, topic_id: str):
         topic_id = self.scraper.extract_topic_id(topic_id)
         if "topics" in self.state and topic_id in self.state["topics"]:

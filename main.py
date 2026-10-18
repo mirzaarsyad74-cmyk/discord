@@ -187,6 +187,19 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking subforum {f_id}: {e}")
 
+    # Check Global Live Feed (all new games & Steam updates)
+    if config.get("enable_global_feed", True):
+        try:
+            feed_posts = monitor.check_live_feed(forum_id="10")
+            for post in feed_posts:
+                is_rel, release_label = classify_release(post)
+                if not is_rel:
+                    continue
+                embed = create_post_embed(post, release_label=release_label)
+                await channel.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Error checking global live feed: {e}")
+
 
 @bot.event
 async def on_ready():
@@ -411,6 +424,18 @@ async def run_webhook_daemon(webhook_url: str):
                 new_threads = monitor.check_subforum(f_id)
                 for th in new_threads:
                     await send_new_thread_to_target(webhook, th, f_id, is_webhook=True)
+
+            # Check Global Live Feed (all new games & Steam updates)
+            if current_cfg.get("enable_global_feed", True):
+                logger.info("Checking CS.RIN.RU Global Live Feed (f=10 Main Forum)...")
+                feed_posts = monitor.check_live_feed(forum_id="10")
+                for post in feed_posts:
+                    is_rel, release_label = classify_release(post)
+                    if not is_rel:
+                        continue
+                    embed = create_post_embed(post, release_label=release_label)
+                    webhook.send(embed=embed, username="CS.RIN.RU Monitor")
+                    logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
 
         except Exception as e:
             logger.error(f"Error during webhook poll: {e}", exc_info=True)

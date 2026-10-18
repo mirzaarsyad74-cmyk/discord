@@ -26,12 +26,23 @@ def format_description(text: str, max_chars: int = 3500, post_url: str = "") -> 
 
 
 def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> discord.Embed:
-    """Builds a Discord Embed for a new post or release notification."""
+    """Builds a Discord Embed for a new post, release notification, or Steam version update."""
     if release_label:
-        title = f"🚀 [{release_label}] {post.topic_title}"
-        embed_color = COLOR_RELEASE
+        lbl_lower = release_label.lower()
+        if "steam version" in lbl_lower or "csf" in lbl_lower or "build" in lbl_lower:
+            title = f"🔄 [{release_label}] {post.topic_title}"
+            embed_color = 0x3498DB  # Steam Blue
+        elif "bypass" in lbl_lower or "hypervisor" in lbl_lower:
+            title = f"⚡ [{release_label}] {post.topic_title}"
+            embed_color = 0xE67E22  # Vibrant Orange
+        elif "repack" in lbl_lower:
+            title = f"📦 [{release_label}] {post.topic_title}"
+            embed_color = 0x9B59B6  # Royal Purple
+        else:
+            title = f"🚀 [{release_label}] {post.topic_title}"
+            embed_color = 0xE74C3C  # Alert Red
     else:
-        title = f"💬 New Reply: {post.topic_title}"
+        title = f"💬 New Post: {post.topic_title}"
         embed_color = COLOR_NEW_POST
 
     if len(title) > 250:

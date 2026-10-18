@@ -1,10 +1,12 @@
 {
+  "enable_global_feed": true,
+  "watch_steam_versions": true,
+  "releases_only": true,
   "topics": [
     "https://cs.rin.ru/forum/viewtopic.php?f=10&t=146233&start=60"
   ],
   "subforums": [],
   "check_interval_seconds": 120,
-  "releases_only": true,
   "alert_on_title_change": true,
   "alert_on_op_update": true,
   "send_latest_post_on_startup": false,

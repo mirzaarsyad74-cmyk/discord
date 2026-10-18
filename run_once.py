@@ -147,11 +147,22 @@ def main():
         new_threads = monitor.check_subforum(f_id)
         for th in new_threads:
             embed = create_new_thread_embed(th, f_id)
+    # 3. Global Live Feed (Auto-streams any new game crack / bypass / repack / Steam version without searching)
+    if config.get("enable_global_feed", True):
+        logger.info("Checking CS.RIN.RU Global Live Feed (f=10 Main Forum)...")
+        feed_posts = monitor.check_live_feed(forum_id="10")
+        logger.info(f"Retrieved {len(feed_posts)} new live feed post(s) to evaluate.")
+        for post in feed_posts:
+            is_rel, release_label = classify_release(post)
+            if not is_rel:
+                continue
+
+            embed = create_post_embed(post, release_label=release_label)
             try:
                 webhook.send(embed=embed, username="CS.RIN.RU Monitor")
-                logger.info(f"Posted new thread alert: {th.get('title')}")
+                logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
             except Exception as e:
-                logger.error(f"Error sending thread alert: {e}")
+                logger.error(f"Error sending feed post #{post.post_id}: {e}")
 
     logger.info("Single-run execution finished successfully!")
 

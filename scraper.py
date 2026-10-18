@@ -155,6 +155,67 @@ class CsRinScraper:
                 })
         return topics
 
+    def get_live_forum_feed(self, forum_id: str = "10") -> List[ForumPost]:
+        """
+        Fetches the live Atom feed from CS.RIN.RU (e.g. f=10 Main Forum)
+        and parses all recent posts across all games into ForumPost objects.
+        """
+        import xml.etree.ElementTree as ET
+        f_id = self.extract_forum_id(forum_id)
+        url = f"{FORUM_URL}/feed.php?f={f_id}"
+        xml_data = self.fetch_html(url)
+        if not xml_data:
+            return []
+
+        try:
+            root = ET.fromstring(xml_data)
+        except Exception as e:
+            logger.error(f"Failed to parse Atom feed XML: {e}")
+            return []
+
+        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        posts = []
+        for e in root.findall('atom:entry', ns):
+            raw_title = e.find('atom:title', ns).text if e.find('atom:title', ns) is not None else ''
+            link = e.find('atom:link', ns).attrib.get('href', '')
+            content_html = e.find('atom:content', ns).text if e.find('atom:content', ns) is not None else ''
+            author_el = e.find('atom:author/atom:name', ns)
+            author = author_el.text if author_el is not None else 'Anonymous'
+            published_el = e.find('atom:published', ns)
+            published = published_el.text if published_el is not None else ''
+
+            # Clean game title (strip 'Main Forum • Re: ' or similar prefixes)
+            clean_title = re.sub(r'^(?:Main Forum\s*[•\-]\s*)+(?:Re:\s*)?', '', raw_title).strip()
+            if not clean_title:
+                clean_title = raw_title
+
+            m_p = re.search(r'p=(\d+)', link)
+            m_t = re.search(r't=(\d+)', link)
+            post_id = m_p.group(1) if m_p else '0'
+            topic_id = m_t.group(1) if m_t else '0'
+
+            soup_tag = BeautifulSoup(f"<div class='postbody'>{content_html}</div>", "html.parser")
+            clean_md = self._html_to_markdown(soup_tag)
+            images = self._extract_images(soup_tag)
+
+            # Standardize URL to cs.rin.ru
+            link = re.sub(r'https?://(?:www\.)?csrin\.org', 'https://cs.rin.ru', link)
+
+            posts.append(ForumPost(
+                post_id=post_id,
+                topic_id=topic_id,
+                topic_title=clean_title,
+                author=author,
+                author_profile_url=None,
+                posted_time=published,
+                post_url=link,
+                raw_content=clean_md,
+                clean_markdown=clean_md,
+                images=images
+            ))
+
+        return posts
+
     def get_topic_metadata(self, topic_id: str) -> TopicMetadata:
         """Fetches the 1st page of topic to extract title, max_start pagination, and OP post."""
         topic_id = self.extract_topic_id(topic_id)
