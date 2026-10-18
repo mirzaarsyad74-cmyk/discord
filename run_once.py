@@ -164,18 +164,24 @@ def main():
             except Exception as e:
                 logger.error(f"Error sending feed post #{post.post_id}: {e}")
 
-    # 4. Steam Client Version Watch (Official Steam Client Updates converted to Kuala Lumpur Time)
+    # 4. Steam Client Version Watch (OpenSteam001/steam-monitor protobuf)
     if config.get("watch_steam_versions", True):
-        logger.info("Checking for official Steam Client updates from Valve...")
-        steam_update = monitor.check_steam_client_version()
-        if steam_update:
-            from steam_client_watcher import create_steam_client_embed
-            embed = create_steam_client_embed(steam_update)
-            try:
-                webhook.send(embed=embed, username="Steam Client Watch")
-                logger.info(f"Posted Steam Client Update: {steam_update.get('title')}")
-            except Exception as e:
-                logger.error(f"Error sending Steam Client update embed: {e}")
+        logger.info("Checking OpenSteam001/steam-monitor protobuf branch for Steam Client updates...")
+        steam_updates = monitor.check_steam_client_version()
+        if steam_updates:
+            from steam_client_watcher import create_steam_monitor_embed
+            for upd in steam_updates:
+                embed = create_steam_monitor_embed(
+                    channel_name=upd["channel_name"],
+                    version=upd["version"],
+                    build_kl_time=upd["build_kl"],
+                    commit_info=upd.get("commit_info")
+                )
+                try:
+                    webhook.send(embed=embed, username="Steam Client Watch")
+                    logger.info(f"Posted Steam Client Version Update: {upd['channel_name']} v{upd['version']}")
+                except Exception as e:
+                    logger.error(f"Error sending Steam Client update embed: {e}")
 
     logger.info("Single-run execution finished successfully!")
 

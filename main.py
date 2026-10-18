@@ -200,14 +200,20 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking global live feed: {e}")
 
-    # Check Steam Client Version Updates
+    # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
     if config.get("watch_steam_versions", True):
         try:
-            steam_update = monitor.check_steam_client_version()
-            if steam_update:
-                from steam_client_watcher import create_steam_client_embed
-                embed = create_steam_client_embed(steam_update)
-                await channel.send(embed=embed)
+            steam_updates = monitor.check_steam_client_version()
+            if steam_updates:
+                from steam_client_watcher import create_steam_monitor_embed
+                for upd in steam_updates:
+                    embed = create_steam_monitor_embed(
+                        channel_name=upd["channel_name"],
+                        version=upd["version"],
+                        build_kl_time=upd["build_kl"],
+                        commit_info=upd.get("commit_info")
+                    )
+                    await channel.send(embed=embed)
         except Exception as e:
             logger.error(f"Error checking Steam Client updates: {e}")
 
@@ -448,15 +454,21 @@ async def run_webhook_daemon(webhook_url: str):
                     webhook.send(embed=embed, username="CS.RIN.RU Monitor")
                     logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
 
-            # Check Steam Client Version Updates
+            # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
             if current_cfg.get("watch_steam_versions", True):
-                logger.info("Checking Steam Client updates from Valve...")
-                steam_update = monitor.check_steam_client_version()
-                if steam_update:
-                    from steam_client_watcher import create_steam_client_embed
-                    embed = create_steam_client_embed(steam_update)
-                    webhook.send(embed=embed, username="Steam Client Watch")
-                    logger.info(f"Posted Steam Client Update: {steam_update.get('title')}")
+                logger.info("Checking OpenSteam001/steam-monitor for Steam Client updates...")
+                steam_updates = monitor.check_steam_client_version()
+                if steam_updates:
+                    from steam_client_watcher import create_steam_monitor_embed
+                    for upd in steam_updates:
+                        embed = create_steam_monitor_embed(
+                            channel_name=upd["channel_name"],
+                            version=upd["version"],
+                            build_kl_time=upd["build_kl"],
+                            commit_info=upd.get("commit_info")
+                        )
+                        webhook.send(embed=embed, username="Steam Client Watch")
+                        logger.info(f"Posted Steam Client Version Update: {upd['channel_name']} v{upd['version']}")
 
         except Exception as e:
             logger.error(f"Error during webhook poll: {e}", exc_info=True)

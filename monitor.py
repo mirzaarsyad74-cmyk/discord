@@ -260,36 +260,56 @@ class ForumMonitor:
         self.save_state()
         return new_items
 
-    def check_steam_client_version(self) -> Optional[Dict[str, Any]]:
+    def check_steam_client_version(self) -> List[Dict[str, Any]]:
         """
-        Checks for new official Steam Client updates from Valve's API.
-        Returns the update item if a new version was released, otherwise None.
+        Monitors https://github.com/OpenSteam001/steam-monitor/tree/protobuf
+        for new Steam Client versions across Stable and Beta channels.
+        Returns a list of new version updates, converted to Kuala Lumpur Time.
         """
-        from steam_client_watcher import check_steam_client_updates
+        from steam_client_watcher import check_steam_monitor_protobuf
         client_state = self.state.setdefault("steam_client", {})
-        last_seen_date = int(client_state.get("last_seen_date", 0))
+        saved_versions = client_state.setdefault("protobuf_versions", {})
+        saved_commit = client_state.get("last_commit_id", "")
 
-        updates = check_steam_client_updates()
-        if not updates:
-            return None
+        monitor_data = check_steam_monitor_protobuf()
+        channels = monitor_data.get("channels", {})
+        latest_commit = monitor_data.get("latest_commit")
 
-        latest_update = updates[0]
-        latest_date = int(latest_update.get("date", 0))
+        if not channels:
+            return []
 
-        # First run initialization: record latest client update without spamming
-        if last_seen_date == 0:
-            logger.info(f"Initialized Steam Client watch with latest version date: {latest_date}")
-            client_state["last_seen_date"] = latest_date
+        # First run initialization: record current versions to state without spamming history
+        if not saved_versions:
+            logger.info("Initializing Steam Client version tracker from OpenSteam001/steam-monitor...")
+            for ch_name, info in channels.items():
+                saved_versions[ch_name] = int(info["version"])
+            if latest_commit and latest_commit.get("commit_id"):
+                client_state["last_commit_id"] = latest_commit["commit_id"]
             self.save_state()
-            return None
+            return []
 
-        if latest_date > last_seen_date:
-            logger.info(f"New Steam Client update detected! Date: {latest_date} (previous: {last_seen_date})")
-            client_state["last_seen_date"] = latest_date
+        new_updates = []
+        for ch_key, info in channels.items():
+            current_ver = int(info["version"])
+            previous_ver = int(saved_versions.get(ch_key, 0))
+
+            if current_ver > previous_ver:
+                logger.info(f"Detected Steam Client Update on {info['channel_name']}! Version: {current_ver} (was: {previous_ver})")
+                new_updates.append({
+                    "channel_name": info["channel_name"],
+                    "version": current_ver,
+                    "build_kl": info["build_kl"],
+                    "commit_info": latest_commit
+                })
+                saved_versions[ch_key] = current_ver
+
+        if latest_commit and latest_commit.get("commit_id"):
+            client_state["last_commit_id"] = latest_commit["commit_id"]
+
+        if new_updates:
             self.save_state()
-            return latest_update
 
-        return None
+        return new_updates
 
     def remove_topic(self, topic_id: str):
         topic_id = self.scraper.extract_topic_id(topic_id)

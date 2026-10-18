@@ -406,13 +406,19 @@ class CsRinScraper:
             formatted_quote = f"\n> **{author_text}**\n" + "\n".join(bq_lines) + "\n"
             quote_content.replace_with(NavigableString(formatted_quote))
 
+        # Clean all codetitle and quotetitle buttons / UI elements first
+        for title_tag in root.find_all("div", class_=["codetitle", "quotetitle"]):
+            title_tag.decompose()
+
         # Handle Code blocks: <div class="codecontent">...</div>
+        box_chars = set("░▒▓█▀▄▌▐■═║╔╗╚╝─│┌┐└┘▲▼►◄◆◇○●☺☻")
         for code in root.find_all("div", class_="codecontent"):
             code_text = code.get_text()
-            title_tag = code.find_previous_sibling("div", class_="codetitle")
-            if title_tag:
-                title_tag.decompose()
-            code.replace_with(NavigableString(f"\n```\n{code_text.strip()}\n```\n"))
+            # If code block is predominantly ASCII art / NFO banners, strip it
+            if any(c in box_chars for c in code_text) or len(code_text) > 800:
+                code.decompose()
+            else:
+                code.replace_with(NavigableString(f"\n```\n{code_text.strip()}\n```\n"))
 
         # Handle Links: <a href="...">...</a>
         for a in root.find_all("a"):
