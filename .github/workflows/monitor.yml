@@ -4,7 +4,9 @@ on:
   schedule:
     # Runs every 15 minutes with offset to bypass GitHub top-of-hour queue throttling
     - cron: '7,22,37,52 * * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI or API
+  repository_dispatch: # Allows external cron webhooks (e.g. cron-job.org)
+    types: [run-monitor]
 
 permissions:
   contents: write
