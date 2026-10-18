@@ -32,7 +32,7 @@ class ForumMonitor:
                     return json.load(f)
             except Exception as e:
                 logger.error(f"Error reading state file {self.state_file}: {e}")
-        return {"topics": {}}
+        return {"topics": {}, "subforums": {}}
 
     def save_state(self):
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
@@ -42,12 +42,58 @@ class ForumMonitor:
         except Exception as e:
             logger.error(f"Error writing state file: {e}")
 
+    @staticmethod
+    def compute_post_fingerprint(post: ForumPost) -> str:
+        """Generates a stable content hash to prevent duplicate alerts even if post ID varies."""
+        clean_excerpt = post.clean_markdown[:400].strip()
+        data = f"{post.topic_id}:{post.author}:{clean_excerpt}"
+        return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+    def is_post_seen(self, topic_id: str, post: ForumPost) -> bool:
+        """Double-check deduplication: checks both Post ID and Content Fingerprint."""
+        topic_id = self.scraper.extract_topic_id(topic_id)
+        topic_state = self.state.get("topics", {}).get(topic_id, {})
+        
+        seen_pids = set(str(pid) for pid in topic_state.get("seen_post_ids", []))
+        if str(post.post_id) in seen_pids:
+            return True
+
+        seen_fingerprints = set(topic_state.get("seen_fingerprints", []))
+        fp = self.compute_post_fingerprint(post)
+        if fp in seen_fingerprints:
+            return True
+
+        return False
+
+    def mark_post_seen(self, topic_id: str, post: ForumPost):
+        """Immediately marks a post as seen and records its fingerprint."""
+        topic_id = self.scraper.extract_topic_id(topic_id)
+        topics_state = self.state.setdefault("topics", {})
+        topic_state = topics_state.setdefault(topic_id, {
+            "title": "",
+            "op_hash": "",
+            "max_start": 0,
+            "seen_post_ids": [],
+            "seen_fingerprints": []
+        })
+
+        seen_pids = set(str(pid) for pid in topic_state.setdefault("seen_post_ids", []))
+        seen_pids.add(str(post.post_id))
+        topic_state["seen_post_ids"] = list(seen_pids)
+
+        seen_fps = set(topic_state.setdefault("seen_fingerprints", []))
+        seen_fps.add(self.compute_post_fingerprint(post))
+        # Keep latest 200 fingerprints to prevent infinite growth
+        topic_state["seen_fingerprints"] = list(seen_fps)[-200:]
+        
+        self.save_state()
+
     def check_topic(self, topic_id: str, is_first_run_init: bool = False) -> TopicUpdateEvents:
         """
-        Polls a topic on CS.RIN.RU:
+        Polls a topic on CS.RIN.RU with bulletproof deduplication:
         - Detects title changes (e.g. [NOT CRACKED] -> [CRACKED])
         - Detects OP post modifications
-        - Detects new replies / posts
+        - Detects new replies / posts without any duplicate alerts
         """
         topic_id = self.scraper.extract_topic_id(topic_id)
         topics_state = self.state.setdefault("topics", {})
@@ -55,10 +101,12 @@ class ForumMonitor:
             "title": "",
             "op_hash": "",
             "max_start": 0,
-            "seen_post_ids": []
+            "seen_post_ids": [],
+            "seen_fingerprints": []
         })
 
-        seen_set = set(topic_state.get("seen_post_ids", []))
+        seen_pids = set(str(pid) for pid in topic_state.get("seen_post_ids", []))
+        seen_fps = set(topic_state.get("seen_fingerprints", []))
         last_title = topic_state.get("title", "")
         last_op_hash = topic_state.get("op_hash", "")
         last_max_start = topic_state.get("max_start", 0)
@@ -80,12 +128,33 @@ class ForumMonitor:
         current_op_hash = ""
         if meta.op_post:
             current_op_hash = hashlib.sha256(meta.op_post.raw_content.encode("utf-8")).hexdigest()
+            # If OP hash is known and changed, trigger OP update
             if last_op_hash and last_op_hash != current_op_hash:
                 logger.info(f"Topic {topic_id} OP post updated!")
                 op_update = meta.op_post
 
+        # If this is the very first time tracking this topic (or explicit init):
+        # Mark all existing posts on the latest page and OP as seen so we NEVER post historical content!
+        if is_first_run_init or not last_title:
+            logger.info(f"First-time initialization for topic {topic_id}. Marking all existing posts as seen...")
+            existing_posts = self.scraper.get_posts_page(topic_id, start=meta.max_start, topic_title=current_title)
+            for p in existing_posts:
+                seen_pids.add(str(p.post_id))
+                seen_fps.add(self.compute_post_fingerprint(p))
+            if meta.op_post:
+                seen_pids.add(str(meta.op_post.post_id))
+                seen_fps.add(self.compute_post_fingerprint(meta.op_post))
+
+            topic_state["title"] = current_title
+            topic_state["op_hash"] = current_op_hash
+            topic_state["max_start"] = meta.max_start
+            topic_state["seen_post_ids"] = list(seen_pids)
+            topic_state["seen_fingerprints"] = list(seen_fps)
+            self.save_state()
+            return TopicUpdateEvents(topic_id=topic_id, topic_title=current_title, new_posts=[])
+
         # Step 2: Determine pages to fetch for new posts
-        # If max_start is greater than last_max_start, we should scan from last_max_start to current max_start
+        # Only check from last_max_start up to current max_start
         pages_to_check = [start for start in meta.all_starts if start >= last_max_start]
         if not pages_to_check:
             pages_to_check = [meta.max_start]
@@ -94,32 +163,23 @@ class ForumMonitor:
         for start in pages_to_check:
             posts = self.scraper.get_posts_page(topic_id, start=start, topic_title=current_title)
             for p in posts:
-                if p.post_id not in seen_set:
+                p_id_str = str(p.post_id)
+                fp = self.compute_post_fingerprint(p)
+                # Deduplication check
+                if p_id_str not in seen_pids and fp not in seen_fps:
                     found_new_posts.append(p)
-                    seen_set.add(p.post_id)
-
-        # If this is initial run and user doesn't want backfilled notifications
-        if is_first_run_init or not last_title:
-            logger.info(f"Initialized topic {topic_id} tracking with {len(seen_set)} existing posts.")
-            topic_state["title"] = current_title
-            topic_state["op_hash"] = current_op_hash
-            topic_state["max_start"] = meta.max_start
-            topic_state["seen_post_ids"] = list(seen_set)
-            self.save_state()
-            return TopicUpdateEvents(
-                topic_id=topic_id,
-                topic_title=current_title,
-                new_posts=[]
-            )
+                    seen_pids.add(p_id_str)
+                    seen_fps.add(fp)
 
         # Update saved state
         topic_state["title"] = current_title
         topic_state["op_hash"] = current_op_hash
         topic_state["max_start"] = meta.max_start
-        topic_state["seen_post_ids"] = list(seen_set)
+        topic_state["seen_post_ids"] = list(seen_pids)
+        topic_state["seen_fingerprints"] = list(seen_fps)[-200:]
         self.save_state()
 
-        # Sort posts by numeric ID so they are posted sequentially
+        # Sort posts by numeric ID so they are posted in chronological order
         found_new_posts.sort(key=lambda p: int(p.post_id) if p.post_id.isdigit() else 0)
 
         return TopicUpdateEvents(
@@ -140,19 +200,18 @@ class ForumMonitor:
             "seen_topic_ids": []
         })
 
-        seen_set = set(subforum_state.get("seen_topic_ids", []))
+        seen_set = set(str(tid) for tid in subforum_state.get("seen_topic_ids", []))
         topics = self.scraper.get_subforum_topics(f_id)
         if not topics:
             return []
 
         new_threads = []
         for t in topics:
-            t_id = t["topic_id"]
+            t_id = str(t["topic_id"])
             if t_id not in seen_set:
                 new_threads.append(t)
                 seen_set.add(t_id)
 
-        # On first run, mark existing topics as seen so we don't spam 100 historical threads
         if is_first_run_init or not subforum_state.get("seen_topic_ids"):
             subforum_state["seen_topic_ids"] = list(seen_set)
             self.save_state()

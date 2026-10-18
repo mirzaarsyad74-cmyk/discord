@@ -108,11 +108,16 @@ async def send_updates_to_target(target, events: TopicUpdateEvents, is_webhook: 
     releases_only = config.get("releases_only", True)
 
     for post in events.new_posts:
+        if monitor.is_post_seen(events.topic_id, post):
+            logger.debug(f"Post #{post.post_id} already marked seen, skipping.")
+            continue
+
         release_label = None
         if releases_only:
             is_rel, release_label = classify_release(post)
             if not is_rel:
                 logger.info(f"Skipping non-release reply #{post.post_id} by {post.author} (releases_only is enabled)")
+                monitor.mark_post_seen(events.topic_id, post)
                 continue
 
         embed = create_post_embed(post, release_label=release_label)
@@ -125,6 +130,8 @@ async def send_updates_to_target(target, events: TopicUpdateEvents, is_webhook: 
             await asyncio.sleep(1)  # pause to prevent rate limits
         except Exception as e:
             logger.error(f"Failed to send post #{post.post_id}: {e}")
+        finally:
+            monitor.mark_post_seen(events.topic_id, post)
 
 
 async def send_new_thread_to_target(target, thread_info: dict, forum_id: str, is_webhook: bool = False):

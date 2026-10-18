@@ -115,11 +115,16 @@ def main():
 
         # New posts
         for post in events.new_posts:
+            if monitor.is_post_seen(t_id, post):
+                logger.debug(f"Post #{post.post_id} already marked seen, skipping.")
+                continue
+
             release_label = None
             if releases_only:
                 is_rel, release_label = classify_release(post)
                 if not is_rel:
                     logger.info(f"Skipping non-release reply #{post.post_id} by {post.author}")
+                    monitor.mark_post_seen(t_id, post)
                     continue
 
             embed = create_post_embed(post, release_label=release_label)
@@ -128,6 +133,8 @@ def main():
                 logger.info(f"Posted {release_label or 'post'} #{post.post_id} by {post.author}")
             except Exception as e:
                 logger.error(f"Error sending post #{post.post_id}: {e}")
+            finally:
+                monitor.mark_post_seen(t_id, post)
 
     # 2. Process Subforums
     for f_raw in subforums:
