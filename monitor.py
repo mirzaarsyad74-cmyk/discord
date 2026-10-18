@@ -311,6 +311,48 @@ class ForumMonitor:
 
         return new_updates
 
+    def is_release_duplicate(self, topic_id: str, release_name: Optional[str]) -> bool:
+        """Checks if this specific release tag was already broadcasted for this game."""
+        if not release_name:
+            return False
+        clean_tag = re.sub(r'[^a-zA-Z0-9]', '', release_name.lower())
+        sig = f"{topic_id}:{clean_tag}"
+        sigs = set(self.state.setdefault("seen_release_signatures", []))
+        return sig in sigs
+
+    def mark_release_seen(self, topic_id: str, release_name: Optional[str]):
+        """Records the release signature so mirrors / duplicate reposts are ignored."""
+        if not release_name:
+            return
+        clean_tag = re.sub(r'[^a-zA-Z0-9]', '', release_name.lower())
+        sig = f"{topic_id}:{clean_tag}"
+        sigs = self.state.setdefault("seen_release_signatures", [])
+        if sig not in sigs:
+            sigs.append(sig)
+            self.state["seen_release_signatures"] = sigs[-600:]
+            self.save_state()
+
+    def check_fitgirl_updates(self) -> List[Dict[str, Any]]:
+        """Checks for new FitGirl Repacks."""
+        from external_monitors import check_fitgirl_feed
+        updates = check_fitgirl_feed(self.state)
+        self.save_state()
+        return updates
+
+    def check_dodi_updates(self) -> List[Dict[str, Any]]:
+        """Checks for new DODI Repacks."""
+        from external_monitors import check_dodi_feed
+        updates = check_dodi_feed(self.state)
+        self.save_state()
+        return updates
+
+    def check_crackwatch_updates(self) -> List[Dict[str, Any]]:
+        """Checks for new releases and announcements on Reddit r/CrackWatch."""
+        from external_monitors import check_crackwatch_reddit
+        updates = check_crackwatch_reddit(self.state)
+        self.save_state()
+        return updates
+
     def remove_topic(self, topic_id: str):
         topic_id = self.scraper.extract_topic_id(topic_id)
         if "topics" in self.state and topic_id in self.state["topics"]:

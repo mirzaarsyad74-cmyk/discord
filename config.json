@@ -1,6 +1,12 @@
 {
   "enable_global_feed": true,
+  "subforum_feeds": [
+    "10"
+  ],
   "watch_steam_versions": true,
+  "watch_fitgirl": true,
+  "watch_dodi": true,
+  "watch_crackwatch_reddit": true,
   "releases_only": true,
   "topics": [
     "https://cs.rin.ru/forum/viewtopic.php?f=10&t=146233&start=60"

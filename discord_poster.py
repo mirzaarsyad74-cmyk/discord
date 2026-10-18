@@ -1,4 +1,5 @@
 import re
+import time
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
@@ -40,6 +41,27 @@ def convert_time_to_kl(raw_time: str) -> str:
             continue
 
     return f"{raw_time} (UTC+08:00)"
+
+
+def sanitize_game_title(raw_title: str) -> str:
+    """
+    Cleans messy forum thread titles:
+    - Strips 'Main Forum • ' and 'Re: ' prefixes
+    - Strips forum tags like '[NOT CRACKED / HV PLAYABLE]', '[Steam/Epic]', '[v1.0.8 / CSF + Crack]'
+    Returns a clean, readable game title.
+    """
+    if not raw_title:
+        return "Game Update"
+    
+    title = raw_title.strip()
+    title = re.sub(r'^(?:Main Forum\s*[•\-]\s*)+', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'^Re:\s*', '', title, flags=re.IGNORECASE)
+    # Strip status brackets
+    title = re.sub(r'\[(?:NOT CRACKED|HV PLAYABLE|UNCRACKED|CRACKED|DENUVO|CSF|STEAM|EPIC|GOG|EARLY ACCESS)[^\]]*\]', '', title, flags=re.IGNORECASE)
+    # Strip version / crack noise in brackets
+    title = re.sub(r'\[(?:v?\d+\.\d+|CSF|Crack|Repack|Update|Clean Steam Files)[^\]]*\]', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'\s{2,}', ' ', title).strip()
+    return title or raw_title
 
 
 def scrub_ugly_content(text: str) -> str:
@@ -103,26 +125,28 @@ def scrub_ugly_content(text: str) -> str:
     return result
 
 
-def extract_metadata(text: str, topic_title: str) -> Dict[str, Optional[str]]:
-    """Extracts structured metadata from release post text."""
-    meta: Dict[str, Optional[str]] = {
+def extract_metadata(text: str, topic_title: str) -> Dict[str, Any]:
+    """Extracts structured metadata and all multi-releases from release post text."""
+    meta: Dict[str, Any] = {
         "release_name": None,
+        "all_releases": [],
         "group": None,
         "version": None,
         "platform": None,
         "size": None
     }
 
-    # 1. Scene release directory tag: Game_Name_v1.0-GROUP or Game.Name-GROUP
-    scene_match = re.search(
+    # 1. Scene release directory tags: Game_Name_v1.0-GROUP or Game.Name-GROUP
+    scene_matches = re.findall(
         r'\b([A-Za-z0-9_.\-]+-(?:ElAmigos|RUNE|TENOKE|FLT|CODEX|SKIDROW|Razor1911|FitGirl|DODI|GOLDBERG|Fairlight|TinyRepack))\b',
         text,
         re.IGNORECASE
     )
-    if scene_match:
-        rel = scene_match.group(1).strip()
-        meta["release_name"] = rel
-        group = rel.split("-")[-1]
+    if scene_matches:
+        unique_matches = list(dict.fromkeys(scene_matches))
+        meta["all_releases"] = unique_matches
+        meta["release_name"] = unique_matches[0]
+        group = unique_matches[0].split("-")[-1]
         meta["group"] = group
 
     # 2. Extract version (v1.2.3 or 1.2.3 or Build 123456)
@@ -154,12 +178,11 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     """
     Builds a Discord Embed for a new post or release notification.
     Cleans out all ASCII art, code artifacts, and formats clean metadata fields.
+    Supports single releases and multi-release post manifests.
     """
-    # 1. Clean the post content
     cleaned_body = scrub_ugly_content(post.clean_markdown)
     meta = extract_metadata(post.clean_markdown, post.topic_title)
 
-    # 2. Determine Category, Title, and Color
     category_name = release_label or "Update"
     lbl_lower = category_name.lower()
 
@@ -171,10 +194,20 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
         icon = "⚡"
         embed_color = COLOR_BYPASS
         badge_text = "Bypass / Hypervisor"
-    elif "repack" in lbl_lower:
-        icon = "📦"
-        embed_color = COLOR_REPACK
-        badge_text = f"{meta['group'] or 'Repack'} Release"
+    elif "repack" in lbl_lower or "fitgirl" in lbl_lower or "dodi" in lbl_lower:
+        grp = (meta.get("group") or "").lower()
+        if "fitgirl" in lbl_lower or "fitgirl" in grp:
+            icon = "🎀"
+            embed_color = 0xFF1493  # FitGirl Signature Magenta
+            badge_text = "FitGirl Repack"
+        elif "dodi" in lbl_lower or "dodi" in grp:
+            icon = "⚡"
+            embed_color = 0x10AC84  # DODI Signature Emerald Green
+            badge_text = "DODI Repack"
+        else:
+            icon = "📦"
+            embed_color = COLOR_REPACK  # Royal Purple for ElAmigos / other repacks
+            badge_text = f"{meta['group'] or 'Repack'} Release"
     elif "crack" in lbl_lower or meta.get("group"):
         icon = "🚀"
         embed_color = COLOR_CRACK
@@ -184,11 +217,7 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
         embed_color = COLOR_NEW_POST
         badge_text = "Forum Post"
 
-    # Clean Game Title (strip bracket tags if already in topic title)
-    clean_game_title = post.topic_title.strip()
-    if clean_game_title.startswith("Re:"):
-        clean_game_title = clean_game_title[3:].strip()
-
+    clean_game_title = sanitize_game_title(post.topic_title)
     title = f"{icon} {clean_game_title}"
     if len(title) > 250:
         title = title[:247] + "..."
@@ -203,7 +232,13 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     embed.set_author(name=f"👤 {post.author} • {badge_text}")
 
     # Structured Fields Grid
-    if meta.get("release_name"):
+    all_rel = meta.get("all_releases", [])
+    if len(all_rel) > 1:
+        rel_list_str = "\n".join([f"• `{r}`" for r in all_rel[:8]])
+        if len(all_rel) > 8:
+            rel_list_str += f"\n• *...and {len(all_rel) - 8} more*"
+        embed.add_field(name=f"📦 Multi-Release Detected ({len(all_rel)} Releases)", value=rel_list_str, inline=False)
+    elif meta.get("release_name"):
         embed.add_field(name="📦 Release Name", value=f"`{meta['release_name']}`", inline=False)
     
     embed.add_field(name="🏷️ Category", value=f"**{badge_text}**", inline=True)
@@ -223,13 +258,13 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     kl_time = convert_time_to_kl(post.posted_time)
     embed.add_field(name="🕒 Posted Time", value=f"`{kl_time}`", inline=True)
 
-    # 3. Notes / Details (Clean description, omitting duplicate release name)
+    # Details / Notes (Clean description, omitting duplicate release name)
     notes_lines = []
-    rel_name = meta.get("release_name") or ""
+    rel_names_set = set(all_rel) if all_rel else ({meta["release_name"]} if meta.get("release_name") else set())
     for line in cleaned_body.splitlines():
         trimmed = line.strip()
-        # Skip line if it's just the release name already displayed in field
-        if rel_name and rel_name in trimmed and len(trimmed) <= len(rel_name) + 5:
+        # Skip line if it's identical to any release name already displayed in field
+        if any(r and r in trimmed and len(trimmed) <= len(r) + 5 for r in rel_names_set):
             continue
         notes_lines.append(trimmed)
 
@@ -238,26 +273,53 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
         if len(clean_notes) > 1000:
             clean_notes = clean_notes[:990] + "..."
         embed.add_field(name="📝 Details / Notes", value=clean_notes, inline=False)
-    elif meta.get("release_name"):
+    elif meta.get("release_name") or all_rel:
         embed.add_field(
             name="📝 Details",
             value="ℹ️ *Scene release registered. Check the forum thread for direct discussions and files.*",
             inline=False
         )
 
-    # 4. Direct Forum Source Link Field (NO repo links)
+    # Direct Forum Source Link Field (NO repo links)
     embed.add_field(
         name="🌐 Forum Link",
         value=f"👉 **[Open Thread on CS.RIN.RU]({post.post_url})**",
         inline=False
     )
 
-    # If post includes images, set the primary image
     if post.images:
         embed.set_image(url=post.images[0])
 
     embed.set_footer(text=f"CS.RIN.RU Forum Monitor • Post #{post.post_id} • Kuala Lumpur (UTC+08:00)")
     return embed
+
+
+def safe_webhook_send(
+    webhook: Any,
+    embed: discord.Embed,
+    username: str = "CS.RIN.RU Monitor",
+    max_retries: int = 3,
+    delay: float = 1.2
+) -> bool:
+    """
+    Sends a Discord webhook with rate-limit shielding and HTTP 429 exponential backoff.
+    Guarantees reliable delivery even when multiple releases burst in a single check.
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            webhook.send(embed=embed, username=username)
+            time.sleep(delay)
+            return True
+        except Exception as e:
+            err_str = str(e).lower()
+            if "429" in err_str or "rate limit" in err_str:
+                wait_time = 3.0 * attempt
+                logger.warning(f"Discord 429 rate limit hit. Waiting {wait_time}s before retry ({attempt}/{max_retries})...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Error sending webhook: {e}")
+                time.sleep(1.0)
+    return False
 
 
 def create_title_change_embed(topic_id: str, old_title: str, new_title: str, url: str) -> discord.Embed:
@@ -285,8 +347,9 @@ def create_op_update_embed(post: ForumPost) -> discord.Embed:
     if len(cleaned_body) > 1200:
         cleaned_body = cleaned_body[:1190] + "..."
 
+    clean_title = sanitize_game_title(post.topic_title)
     embed = discord.Embed(
-        title=f"📝 Main Post (OP) Updated: {post.topic_title}",
+        title=f"📝 Main Post (OP) Updated: {clean_title}",
         url=post.post_url,
         description=cleaned_body or "*[Main post edited]*",
         color=COLOR_OP_UPDATE
@@ -306,10 +369,11 @@ def create_op_update_embed(post: ForumPost) -> discord.Embed:
 def create_new_thread_embed(thread_info: dict, forum_id: str) -> discord.Embed:
     """Builds an embed when a brand new game topic is posted to a monitored subforum."""
     kl_now = datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p UTC+08:00")
+    clean_title = sanitize_game_title(thread_info.get("title", "Untitled"))
     embed = discord.Embed(
-        title=f"🆕 New Topic: {thread_info.get('title', 'Untitled')}",
+        title=f"🆕 New Topic: {clean_title}",
         url=thread_info.get("url", ""),
-        description=f"A new topic was started in forum section #{forum_id}.",
+        description=f"A new game topic was started in forum section #{forum_id}.",
         color=COLOR_NEW_POST
     )
     embed.add_field(

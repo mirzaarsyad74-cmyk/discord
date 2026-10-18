@@ -88,7 +88,13 @@ def classify_release(post: ForumPost, custom_keywords: Optional[List[str]] = Non
     for pat in REPACKERS:
         m = re.search(pat, own_text, re.IGNORECASE)
         if m:
-            repacker_found = m.group(0).capitalize()
+            matched_txt = m.group(0).lower()
+            if matched_txt == "fitgirl":
+                repacker_found = "FitGirl"
+            elif matched_txt == "dodi":
+                repacker_found = "DODI"
+            else:
+                repacker_found = m.group(0).capitalize()
             break
 
     # 5. Detect Scene Groups

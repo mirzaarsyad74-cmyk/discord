@@ -217,6 +217,33 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking Steam Client updates: {e}")
 
+    # Check FitGirl Repacks (Signature Magenta Color)
+    if config.get("watch_fitgirl", True):
+        try:
+            from external_monitors import create_fitgirl_embed
+            for upd in monitor.check_fitgirl_updates():
+                await channel.send(embed=create_fitgirl_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking FitGirl feed: {e}")
+
+    # Check DODI Repacks (Signature Emerald Green Color)
+    if config.get("watch_dodi", True):
+        try:
+            from external_monitors import create_dodi_embed
+            for upd in monitor.check_dodi_updates():
+                await channel.send(embed=create_dodi_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking DODI feed: {e}")
+
+    # Check Reddit r/CrackWatch (Signature Orange-Red Color)
+    if config.get("watch_crackwatch_reddit", True):
+        try:
+            from external_monitors import create_crackwatch_embed
+            for upd in monitor.check_crackwatch_updates():
+                await channel.send(embed=create_crackwatch_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking r/CrackWatch feed: {e}")
+
 
 @bot.event
 async def on_ready():
@@ -467,8 +494,29 @@ async def run_webhook_daemon(webhook_url: str):
                             build_kl_time=upd["build_kl"],
                             commit_info=upd.get("commit_info")
                         )
-                        webhook.send(embed=embed, username="Steam Client Watch")
+                        safe_webhook_send(webhook, embed, username="Steam Client Watch")
                         logger.info(f"Posted Steam Client Version Update: {upd['channel_name']} v{upd['version']}")
+
+            # Check FitGirl Repacks (Signature Magenta Color)
+            if current_cfg.get("watch_fitgirl", True):
+                from external_monitors import create_fitgirl_embed
+                for upd in monitor.check_fitgirl_updates():
+                    safe_webhook_send(webhook, create_fitgirl_embed(upd), username="FitGirl Repacks")
+                    logger.info(f"Posted FitGirl Repack: {upd['title']}")
+
+            # Check DODI Repacks (Signature Emerald Green Color)
+            if current_cfg.get("watch_dodi", True):
+                from external_monitors import create_dodi_embed
+                for upd in monitor.check_dodi_updates():
+                    safe_webhook_send(webhook, create_dodi_embed(upd), username="DODI Repacks")
+                    logger.info(f"Posted DODI Repack: {upd['title']}")
+
+            # Check Reddit r/CrackWatch (Signature Orange-Red Color)
+            if current_cfg.get("watch_crackwatch_reddit", True):
+                from external_monitors import create_crackwatch_embed
+                for upd in monitor.check_crackwatch_updates():
+                    safe_webhook_send(webhook, create_crackwatch_embed(upd), username="Reddit CrackWatch")
+                    logger.info(f"Posted r/CrackWatch: {upd['title']}")
 
         except Exception as e:
             logger.error(f"Error during webhook poll: {e}", exc_info=True)
