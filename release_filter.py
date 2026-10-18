@@ -11,7 +11,7 @@ REPACKERS = [
 SCENE_GROUPS = [
     r'\brune\b', r'\btenoke\b', r'\bflt\b', r'\bfairlight\b',
     r'\bcodex\b', r'\bskidrow\b', r'\bplaza\b', r'\brazor1911\b',
-    r'\bcaviator\b', r'\bempress\b', r'\bhypervisor\b'
+    r'\bcaviator\b', r'\bempress\b', r'\bhypervisor\b', r'\bvoices38\b'
 ]
 
 CORE_RELEASE_TERMS = [
@@ -65,6 +65,20 @@ def classify_release(post: ForumPost, custom_keywords: Optional[List[str]] = Non
     own_text = re.sub(r'(?m)^>.*$', '', post.clean_markdown).strip()
     if not own_text or len(own_text) < 10:
         return False, None
+
+    # 0. Voices38 Priority Detection (Denuvo Bypasses & Hypervisor releases)
+    author_lower = (post.author or "").lower()
+    text_lower = own_text.lower()
+    if author_lower == "voices38":
+        if any(term in text_lower for term in ["bypass", "hypervisor", "hv"]):
+            return True, "Voices38 Denuvo Bypass"
+        elif any(term in text_lower for term in ["crack", "denuvo", "fix", "patch"]):
+            return True, "Voices38 Denuvo Crack"
+        return True, "Voices38 Release"
+
+    if re.search(r'\bvoices38\b', own_text, re.IGNORECASE):
+        if any(term in text_lower for term in ["bypass", "hypervisor", "hv", "crack", "denuvo", "patch", "fix", "test"]):
+            return True, "Voices38 Denuvo Bypass"
 
     # 2. Check for question patterns / casual banter
     for q_pattern in QUESTION_PATTERNS:

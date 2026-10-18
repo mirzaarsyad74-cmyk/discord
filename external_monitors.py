@@ -322,13 +322,18 @@ def create_crackwatch_embed(item: Dict[str, Any]):
     """Builds a Discord Embed for a new r/CrackWatch alert with signature Reddit Orange color."""
     import discord
     title = item["title"]
+    is_voices38 = "voices38" in title.lower()
+    embed_color = 0xFFD700 if is_voices38 else COLOR_CRACKWATCH
+    prefix = "⚡ [r/CrackWatch • Voices38 Alert]" if is_voices38 else "👀 [r/CrackWatch]"
 
     embed = discord.Embed(
-        title=f"👀 [r/CrackWatch] {title}",
+        title=f"{prefix} {title}",
         url=item["link"],
-        color=COLOR_CRACKWATCH
+        color=embed_color
     )
     embed.set_thumbnail(url=REDDIT_ICON)
+    if is_voices38:
+        embed.add_field(name="⚡ Special Release Alert", value="**Voices38 Denuvo Bypass / Crack Detected!**", inline=False)
     embed.add_field(name="📢 Release Title", value=f"**{title}**", inline=False)
     embed.add_field(name="👤 Posted By", value=f"`{item.get('author', 'Redditor')}`", inline=True)
     embed.add_field(name="🕒 Posted Time", value=f"`{item['time_kl']}`", inline=True)

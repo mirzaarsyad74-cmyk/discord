@@ -138,7 +138,7 @@ def extract_metadata(text: str, topic_title: str) -> Dict[str, Any]:
 
     # 1. Scene release directory tags: Game_Name_v1.0-GROUP or Game.Name-GROUP
     scene_matches = re.findall(
-        r'\b([A-Za-z0-9_.\-]+-(?:ElAmigos|RUNE|TENOKE|FLT|CODEX|SKIDROW|Razor1911|FitGirl|DODI|GOLDBERG|Fairlight|TinyRepack))\b',
+        r'\b([A-Za-z0-9_.\-]+-(?:ElAmigos|RUNE|TENOKE|FLT|CODEX|SKIDROW|Razor1911|FitGirl|DODI|GOLDBERG|Fairlight|TinyRepack|Voices38))\b',
         text,
         re.IGNORECASE
     )
@@ -148,6 +148,9 @@ def extract_metadata(text: str, topic_title: str) -> Dict[str, Any]:
         meta["release_name"] = unique_matches[0]
         group = unique_matches[0].split("-")[-1]
         meta["group"] = group
+
+    if not meta["group"] and re.search(r'\bvoices38\b', text, re.IGNORECASE):
+        meta["group"] = "Voices38"
 
     # 2. Extract version (v1.2.3 or 1.2.3 or Build 123456)
     v_match = re.search(r'(?:^|[_\s.\-])v?(\d+\.\d+(?:\.\d+)?(?:[a-z])?)(?:[_\s.\-]|$$)', text, re.IGNORECASE)
@@ -186,7 +189,11 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     category_name = release_label or "Update"
     lbl_lower = category_name.lower()
 
-    if "steam version" in lbl_lower or "csf" in lbl_lower or "build" in lbl_lower:
+    if "voices38" in lbl_lower or (post.author and post.author.lower() == "voices38") or "voices38" in (meta.get("group") or "").lower():
+        icon = "⚡"
+        embed_color = 0xFFD700  # Electric Gold for Voices38 Denuvo Bypasses
+        badge_text = "Voices38 Denuvo Bypass"
+    elif "steam version" in lbl_lower or "csf" in lbl_lower or "build" in lbl_lower:
         icon = "🔄"
         embed_color = COLOR_STEAM_VER
         badge_text = "Steam Version / CSF Update"
