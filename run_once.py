@@ -164,6 +164,19 @@ def main():
             except Exception as e:
                 logger.error(f"Error sending feed post #{post.post_id}: {e}")
 
+    # 4. Steam Client Version Watch (Official Steam Client Updates converted to Kuala Lumpur Time)
+    if config.get("watch_steam_versions", True):
+        logger.info("Checking for official Steam Client updates from Valve...")
+        steam_update = monitor.check_steam_client_version()
+        if steam_update:
+            from steam_client_watcher import create_steam_client_embed
+            embed = create_steam_client_embed(steam_update)
+            try:
+                webhook.send(embed=embed, username="Steam Client Watch")
+                logger.info(f"Posted Steam Client Update: {steam_update.get('title')}")
+            except Exception as e:
+                logger.error(f"Error sending Steam Client update embed: {e}")
+
     logger.info("Single-run execution finished successfully!")
 
 

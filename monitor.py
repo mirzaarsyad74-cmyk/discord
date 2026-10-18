@@ -260,6 +260,37 @@ class ForumMonitor:
         self.save_state()
         return new_items
 
+    def check_steam_client_version(self) -> Optional[Dict[str, Any]]:
+        """
+        Checks for new official Steam Client updates from Valve's API.
+        Returns the update item if a new version was released, otherwise None.
+        """
+        from steam_client_watcher import check_steam_client_updates
+        client_state = self.state.setdefault("steam_client", {})
+        last_seen_date = int(client_state.get("last_seen_date", 0))
+
+        updates = check_steam_client_updates()
+        if not updates:
+            return None
+
+        latest_update = updates[0]
+        latest_date = int(latest_update.get("date", 0))
+
+        # First run initialization: record latest client update without spamming
+        if last_seen_date == 0:
+            logger.info(f"Initialized Steam Client watch with latest version date: {latest_date}")
+            client_state["last_seen_date"] = latest_date
+            self.save_state()
+            return None
+
+        if latest_date > last_seen_date:
+            logger.info(f"New Steam Client update detected! Date: {latest_date} (previous: {last_seen_date})")
+            client_state["last_seen_date"] = latest_date
+            self.save_state()
+            return latest_update
+
+        return None
+
     def remove_topic(self, topic_id: str):
         topic_id = self.scraper.extract_topic_id(topic_id)
         if "topics" in self.state and topic_id in self.state["topics"]:
