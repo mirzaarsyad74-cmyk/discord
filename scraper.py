@@ -1,11 +1,19 @@
 import re
 import html
 import logging
+import socket
+import urllib3.util.connection as urllib_conn
 from urllib.parse import urljoin, urlparse, parse_qs
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Dict, Any
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
+
+# Force IPv4 socket resolution to prevent Errno 101 Network is unreachable on GitHub Actions / cloud runners
+try:
+    urllib_conn.allowed_gai_family = lambda: socket.AF_INET
+except Exception:
+    pass
 
 logger = logging.getLogger("cs_rin_scraper")
 
