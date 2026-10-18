@@ -19,28 +19,78 @@ COLOR_TITLE_CHANGE = 0xE74C3C   # Alert Red
 COLOR_OP_UPDATE = 0xF39C12      # Gold / Orange
 
 
-def convert_time_to_kl(raw_time: str) -> str:
-    """Converts ISO or forum timestamp strings into Kuala Lumpur Time (UTC+08:00)."""
+def format_post_time(raw_time: str) -> str:
+    """
+    Parses original post creation time and formats it as:
+    `Sun, Oct 18, 2026 06:21 PM GMT+8`
+    *(Original: 11:21 AM UTC+01:00)*
+    """
     if not raw_time:
-        return datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p UTC+08:00")
-    
-    # Try ISO-8601 (from Atom XML feed)
+        now_kl = datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+        return f"`{now_kl}`"
+
+    # Check relative time strings like '15 minutes ago'
+    m_rel = re.search(r'(\d+)\s*(minute|hour|sec|day)s?\s*ago', raw_time, re.I)
+    if m_rel:
+        val = int(m_rel.group(1))
+        unit = m_rel.group(2).lower()
+        now_utc = datetime.now(timezone.utc)
+        if 'min' in unit:
+            dt = now_utc - timedelta(minutes=val)
+        elif 'hour' in unit:
+            dt = now_utc - timedelta(hours=val)
+        elif 'day' in unit:
+            dt = now_utc - timedelta(days=val)
+        else:
+            dt = now_utc
+        kl_dt = dt.astimezone(KL_TZ)
+        kl_str = kl_dt.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+        return f"`{kl_str}`\n*(Original: {raw_time})*"
+
+    # Try ISO-8601 (e.g. CS.RIN Atom feed '2026-10-18T11:21:43+01:00')
     try:
         dt = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
-        return dt.astimezone(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p UTC+08:00")
+        kl_dt = dt.astimezone(KL_TZ)
+        kl_str = kl_dt.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+        
+        orig_tz = dt.strftime("UTC%z")
+        if len(orig_tz) == 8:
+            orig_tz = f"{orig_tz[:6]}:{orig_tz[6:]}"
+        orig_time = dt.strftime("%I:%M %p").lstrip("0")
+        orig_str = f"{orig_time} {orig_tz}"
+        return f"`{kl_str}`\n*(Original: {orig_str})*"
     except Exception:
         pass
 
-    # Try common phpBB timestamp formats
-    for fmt in ("%A, %d %b %Y, %H:%M", "%d %b %Y, %H:%M", "%Y-%m-%d %H:%M:%S"):
+    # Try common RFC / phpBB formats
+    for fmt in (
+        "%a, %d %b %Y %H:%M:%S %z",
+        "%a, %d %b %Y %H:%M:%S GMT",
+        "%A, %d %b %Y, %H:%M",
+        "%d %b %Y, %H:%M",
+        "%Y-%m-%d %H:%M:%S"
+    ):
         try:
             dt = datetime.strptime(raw_time.strip(), fmt)
-            dt = dt.replace(tzinfo=timezone.utc).astimezone(KL_TZ)
-            return dt.strftime("%a, %b %d, %Y %I:%M %p UTC+08:00")
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            kl_dt = dt.astimezone(KL_TZ)
+            kl_str = kl_dt.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+            orig_time = dt.strftime("%I:%M %p").lstrip("0")
+            orig_tz = dt.strftime("UTC%z")
+            if len(orig_tz) == 8:
+                orig_tz = f"{orig_tz[:6]}:{orig_tz[6:]}"
+            return f"`{kl_str}`\n*(Original: {orig_time} {orig_tz})*"
         except Exception:
             continue
 
-    return f"{raw_time} (UTC+08:00)"
+    return f"`{raw_time} GMT+8`"
+
+
+def convert_time_to_kl(raw_time: str) -> str:
+    """Legacy helper returning single line GMT+8 string."""
+    res = format_post_time(raw_time)
+    return res.splitlines()[0].strip("`")
 
 
 def sanitize_game_title(raw_title: str) -> str:
@@ -82,6 +132,9 @@ def scrub_ugly_content(text: str) -> str:
     text = re.sub(r'(?i)Line\s*number\s*On/Off\s*\|\s*Expand/Contract[^\n]*', '', text)
     text = re.sub(r'(?i)\bSelect\s+all\b', '', text)
     text = re.sub(r'\[\[Please login to see this link\.\]\]', '*(link protected on forum)*', text)
+    # Strip phpBB Atom feed footer statistics
+    text = re.sub(r'(?i)Statistics:\s*Posted\s*by[^\n]*', '', text)
+    text = re.sub(r'(?i)\bPosted\s*by\s+[^\n—–-]+[—–-]\s*\d+\s*(?:minute|hour|sec|day)s?\s*ago[^\n]*', '', text)
 
     box_drawing_chars = set("░▒▓█▀▄▌▐■═║╔╗╚╝─│┌┐└┘▲▼►◄◆◇○●☺☻")
     cleaned_lines = []
@@ -266,8 +319,8 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     if meta.get("size"):
         embed.add_field(name="💾 File Size", value=f"**{meta['size']}**", inline=True)
 
-    kl_time = convert_time_to_kl(post.posted_time)
-    embed.add_field(name="🕒 Posted Time", value=f"`{kl_time}`", inline=True)
+    post_time_field = format_post_time(post.posted_time)
+    embed.add_field(name="🕒 Posted Time (GMT+8)", value=post_time_field, inline=True)
 
     # Details / Notes (Clean description, omitting duplicate release name)
     notes_lines = []
@@ -301,7 +354,7 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     if post.images:
         embed.set_image(url=post.images[0])
 
-    embed.set_footer(text=f"CS.RIN.RU Forum Monitor • Post #{post.post_id} • Kuala Lumpur (UTC+08:00)")
+    embed.set_footer(text=f"CS.RIN.RU Forum Monitor • Post #{post.post_id} • GMT+8")
     return embed
 
 
@@ -335,7 +388,7 @@ def safe_webhook_send(
 
 def create_title_change_embed(topic_id: str, old_title: str, new_title: str, url: str) -> discord.Embed:
     """Builds an alert embed when the thread title changes (e.g. crack status updated)."""
-    kl_now = datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p UTC+08:00")
+    kl_now = datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
     embed = discord.Embed(
         title="🚨 Topic Status / Title Updated!",
         url=url,
@@ -353,7 +406,7 @@ def create_title_change_embed(topic_id: str, old_title: str, new_title: str, url
 
 def create_op_update_embed(post: ForumPost) -> discord.Embed:
     """Builds an embed when the main thread (first post) was edited."""
-    kl_time = convert_time_to_kl(post.posted_time)
+    post_time_field = format_post_time(post.posted_time)
     cleaned_body = scrub_ugly_content(post.clean_markdown)
     if len(cleaned_body) > 1200:
         cleaned_body = cleaned_body[:1190] + "..."
@@ -370,6 +423,7 @@ def create_op_update_embed(post: ForumPost) -> discord.Embed:
         color=COLOR_OP_UPDATE
     )
     embed.set_author(name=f"Author: {post.author}", url=post.author_profile_url or "")
+    embed.add_field(name="🕒 Updated Time (GMT+8)", value=post_time_field, inline=True)
     embed.add_field(
         name="🌐 Forum Link",
         value=f"👉 **[Open Thread on CS.RIN.RU]({post_link})**",
@@ -377,13 +431,13 @@ def create_op_update_embed(post: ForumPost) -> discord.Embed:
     )
     if post.images:
         embed.set_image(url=post.images[0])
-    embed.set_footer(text=f"CS.RIN.RU • OP Post #{post.post_id} Edited • {kl_time}")
+    embed.set_footer(text=f"CS.RIN.RU • OP Post #{post.post_id} Edited • GMT+8")
     return embed
 
 
 def create_new_thread_embed(thread_info: dict, forum_id: str) -> discord.Embed:
     """Builds an embed when a brand new game topic is posted to a monitored subforum."""
-    kl_now = datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p UTC+08:00")
+    kl_now = datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
     clean_title = sanitize_game_title(thread_info.get("title", "Untitled"))
     embed = discord.Embed(
         title=f"🆕 New Topic: {clean_title}",

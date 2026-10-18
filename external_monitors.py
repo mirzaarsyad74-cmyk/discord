@@ -33,9 +33,9 @@ STANDARD_HEADERS = {
 
 
 def parse_pubdate_to_kl(date_str: str) -> str:
-    """Converts RSS pubDate or ISO date to Kuala Lumpur Time (UTC+08:00)."""
+    """Converts RSS pubDate or ISO date to Kuala Lumpur Time (GMT+8) with original time."""
     if not date_str:
-        return datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p UTC+08:00")
+        return f"`{datetime.now(KL_TZ).strftime('%a, %b %d, %Y %I:%M %p GMT+8')}`"
     
     # Try RFC 822 format (standard RSS: Sun, 18 Oct 2026 04:39:01 +0000)
     for fmt in (
@@ -50,8 +50,12 @@ def parse_pubdate_to_kl(date_str: str) -> str:
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             dt_kl = dt.astimezone(KL_TZ)
-            time_str = dt_kl.strftime("%I:%M %p").lstrip("0")
-            return f"{dt_kl.strftime('%a, %b %d, %Y')} {time_str} UTC +08:00"
+            kl_str = dt_kl.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+            orig_time = dt.strftime("%I:%M %p").lstrip("0")
+            orig_tz = dt.strftime("UTC%z")
+            if len(orig_tz) == 8:
+                orig_tz = f"{orig_tz[:6]}:{orig_tz[6:]}"
+            return f"`{kl_str}`\n*(Original: {orig_time} {orig_tz})*"
         except Exception:
             continue
 
@@ -59,12 +63,16 @@ def parse_pubdate_to_kl(date_str: str) -> str:
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         dt_kl = dt.astimezone(KL_TZ)
-        time_str = dt_kl.strftime("%I:%M %p").lstrip("0")
-        return f"{dt_kl.strftime('%a, %b %d, %Y')} {time_str} UTC +08:00"
+        kl_str = dt_kl.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+        orig_time = dt.strftime("%I:%M %p").lstrip("0")
+        orig_tz = dt.strftime("UTC%z")
+        if len(orig_tz) == 8:
+            orig_tz = f"{orig_tz[:6]}:{orig_tz[6:]}"
+        return f"`{kl_str}`\n*(Original: {orig_time} {orig_tz})*"
     except Exception:
         pass
 
-    return f"{date_str} (UTC+08:00)"
+    return f"`{date_str} GMT+8`"
 
 
 def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
@@ -283,13 +291,13 @@ def create_fitgirl_embed(item: Dict[str, Any]):
     embed.add_field(name="📦 Full Repack Title", value=f"`{title}`", inline=False)
     embed.add_field(name="👑 Repacker", value="**FitGirl**", inline=True)
     embed.add_field(name="🏷️ Category", value="**Game Repack**", inline=True)
-    embed.add_field(name="🕒 Release Time", value=f"`{item['time_kl']}`", inline=True)
+    embed.add_field(name="🕒 Release Time (GMT+8)", value=item["time_kl"], inline=True)
     embed.add_field(
         name="🌐 Official Download Page",
         value=f"👉 **[Open FitGirl-Repacks Post]({item['link']})**",
         inline=False
     )
-    embed.set_footer(text=f"FitGirl Repacks Monitor • Kuala Lumpur Time (UTC+08:00)")
+    embed.set_footer(text="FitGirl Repacks Monitor • GMT+8")
     return embed
 
 
@@ -308,13 +316,13 @@ def create_dodi_embed(item: Dict[str, Any]):
     embed.add_field(name="📦 Full Repack Title", value=f"`{title}`", inline=False)
     embed.add_field(name="👑 Repacker", value="**DODI**", inline=True)
     embed.add_field(name="🏷️ Category", value="**Game Repack**", inline=True)
-    embed.add_field(name="🕒 Release Time", value=f"`{item['time_kl']}`", inline=True)
+    embed.add_field(name="🕒 Release Time (GMT+8)", value=item["time_kl"], inline=True)
     embed.add_field(
         name="🌐 Official Download Page",
         value=f"👉 **[Open DODI-Repacks Post]({item['link']})**",
         inline=False
     )
-    embed.set_footer(text=f"DODI Repacks Monitor • Kuala Lumpur Time (UTC+08:00)")
+    embed.set_footer(text="DODI Repacks Monitor • GMT+8")
     return embed
 
 
@@ -336,11 +344,11 @@ def create_crackwatch_embed(item: Dict[str, Any]):
         embed.add_field(name="⚡ Special Release Alert", value="**Voices38 Denuvo Bypass / Crack Detected!**", inline=False)
     embed.add_field(name="📢 Release Title", value=f"**{title}**", inline=False)
     embed.add_field(name="👤 Posted By", value=f"`{item.get('author', 'Redditor')}`", inline=True)
-    embed.add_field(name="🕒 Posted Time", value=f"`{item['time_kl']}`", inline=True)
+    embed.add_field(name="🕒 Posted Time (GMT+8)", value=item["time_kl"], inline=True)
     embed.add_field(
         name="🌐 Reddit Thread",
         value=f"👉 **[View Thread on r/CrackWatch]({item['link']})**",
         inline=False
     )
-    embed.set_footer(text=f"Reddit r/CrackWatch Monitor • Kuala Lumpur Time (UTC+08:00)")
+    embed.set_footer(text="Reddit r/CrackWatch Monitor • GMT+8")
     return embed

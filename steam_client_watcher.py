@@ -18,29 +18,34 @@ STEAM_LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Stea
 
 def to_kl_time_string(unix_timestamp: int) -> str:
     """
-    Converts a Unix timestamp into Kuala Lumpur Time (UTC+08:00),
-    formatted to match the Steam 'About Steam' window:
-    e.g. 'Wed, Oct 14, 2026 3:46 AM UTC +08:00'
+    Converts a Unix timestamp into Kuala Lumpur Time (GMT+8),
+    displaying both GMT+8 and original UTC time:
+    e.g. '`Wed, Oct 14, 2026 3:46 AM GMT+8`\n*(Original: 7:46 PM UTC)*'
     """
     try:
-        dt = datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
-        dt_kl = dt.astimezone(KL_TZ)
+        dt_utc = datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
+        dt_kl = dt_utc.astimezone(KL_TZ)
         time_part = dt_kl.strftime("%I:%M %p").lstrip("0")
         date_part = dt_kl.strftime("%a, %b %d, %Y")
-        return f"{date_part} {time_part} UTC +08:00"
+        orig_part = dt_utc.strftime("%I:%M %p UTC").lstrip("0")
+        return f"`{date_part} {time_part} GMT+8`\n*(Original: {orig_part})*"
     except Exception as e:
         logger.error(f"Error converting timestamp {unix_timestamp}: {e}")
         return str(unix_timestamp)
 
 
 def iso_to_kl_time_string(iso_str: str) -> str:
-    """Converts an ISO-8601 timestamp string to Kuala Lumpur Time (UTC+08:00)."""
+    """Converts an ISO-8601 timestamp string to Kuala Lumpur Time (GMT+8)."""
     try:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         dt_kl = dt.astimezone(KL_TZ)
         time_part = dt_kl.strftime("%I:%M %p").lstrip("0")
         date_part = dt_kl.strftime("%a, %b %d, %Y")
-        return f"{date_part} {time_part} UTC +08:00"
+        orig_tz = dt.strftime("UTC%z")
+        if len(orig_tz) == 8:
+            orig_tz = f"{orig_tz[:6]}:{orig_tz[6:]}"
+        orig_time = dt.strftime("%I:%M %p").lstrip("0")
+        return f"`{date_part} {time_part} GMT+8`\n*(Original: {orig_time} {orig_tz})*"
     except Exception as e:
         logger.error(f"Error converting ISO time {iso_str}: {e}")
         return iso_str
@@ -176,5 +181,5 @@ def create_steam_monitor_embed(
         inline=False
     )
 
-    embed.set_footer(text=f"Steam Version Monitor • Kuala Lumpur Time (UTC+08:00)")
+    embed.set_footer(text="Steam Version Monitor • GMT+8")
     return embed

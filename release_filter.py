@@ -37,9 +37,18 @@ STEAM_VERSION_PATTERNS = [
 
 # Patterns representing questions or casual chatter (to exclude false positives)
 QUESTION_PATTERNS = [
-    r'(?i)\b(?:any|when|where|is there|does anyone have|how to|can someone|will there be)\b.*\b(?:crack|repack|bypass|csf|update)\b.*\?',
-    r'(?i)\b(?:crack|bypass|repack|csf)\s*(?:when|eta|pls|please)\b',
-    r'(?i)^(?:thanks?|thx|thank you|working|works|good job|tested|save game|anyone have this)\b'
+    r'(?i)\b(?:any|when|where|is there|does anyone have|how to|can someone|can somebody|can anybody|will there be|anyone got|someone have|somebody have)\b.*\b(?:crack|repack|bypass|csf|update|clean steam files|files?)\b',
+    r'(?i)\b(?:can|could|please|pls)\s+(?:someone|somebody|anybody|anyone)\s+(?:post|share|upload|send|provide|give|dump)\b',
+    r'(?i)\b(?:clean steam files|csf|crack|bypass|repack)\s*(?:when|eta|pls|please|\?)\b',
+    r'(?i)^(?:thanks?|thx|thank you|working|works|good job|tested|save game|anyone have this)\b',
+    r'(?i)\b(?:request(?:ing)?|need|looking for)\s+(?:clean steam files|csf|crack|bypass)\b',
+    r'\?\s*$'  # Post ends with a question mark
+]
+
+# Download links or file hosts
+DOWNLOAD_LINK_PATTERNS = [
+    r'(?i)\b(?:https?://|magnet:\?xt=)',
+    r'(?i)\b(?:mega\.nz|pixeldrain|1fichier|gofile|mediafire|qiwi|rapidgator|drive\.google\.com|multiup|krakenfiles|ddownload|buzzheavier|datanodes)\b'
 ]
 
 # Structural markers common in real releases
@@ -90,9 +99,14 @@ def classify_release(post: ForumPost, custom_keywords: Optional[List[str]] = Non
     # 3. Detect Steam Version / Clean Steam Files (CSF) / Build updates
     build_match = re.search(r'(?i)\bbuild\s*(\d{5,})\b', own_text)
     is_csf = bool(re.search(r'(?i)\b(?:csf|clean steam files)\b', own_text))
-    is_steam_update = any(re.search(pat, own_text) for pat in STEAM_VERSION_PATTERNS)
+    has_links = any(re.search(pat, own_text) for pat in DOWNLOAD_LINK_PATTERNS)
+    has_structure = any(re.search(pat, own_text) for pat in RELEASE_STRUCTURES)
 
     if (is_csf or build_match) and (len(own_text) > 15):
+        # A genuine CSF post must contain links, size, or build info (not just someone asking for files)
+        if is_csf and not (has_links or has_structure or build_match or post.is_op):
+            return False, None
+
         if build_match:
             return True, f"Steam Version Update (Build {build_match.group(1)})"
         return True, "Steam Version Update (CSF)"
