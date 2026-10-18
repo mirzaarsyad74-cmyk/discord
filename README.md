@@ -24,9 +24,39 @@ An automated Discord bot that monitors threads on **CS.RIN.RU** (specifically co
 
 ---
 
-## 🚀 Quick Start (Choose Mode A or Mode B)
+## ⚡ Option 1: 100% Free 24/7 Cloud Automation (GitHub Actions)
 
-### Option A: Webhook Mode (Fastest — 1 Minute Setup)
+You can run this bot completely free in the cloud on GitHub Actions—**no server or PC running needed!**
+
+### Step 1: Create a GitHub Repository & Push
+1. Create a new repository on [GitHub](https://github.com/new) (e.g., `cs-rin-discord-bot`). Keep it **Private** or Public.
+2. In your terminal, link and push the code:
+   ```powershell
+   git remote add origin https://github.com/mirzaarsyad74-cmyk/YOUR_REPO_NAME.git
+   git push -u origin main
+   ```
+
+### Step 2: Add Your Discord Webhook to GitHub Secrets
+1. In your GitHub repository, click **Settings** ➔ **Secrets and variables** ➔ **Actions**.
+2. Click **New repository secret**.
+3. Name: `DISCORD_WEBHOOK_URL`
+4. Secret: Paste your Discord Webhook URL (`https://discord.com/api/webhooks/...`).
+5. Click **Add secret**.
+
+### Step 3: Enable Write Permissions (For State Persistence)
+1. In your GitHub repository, click **Settings** ➔ **Actions** ➔ **General**.
+2. Scroll to **Workflow permissions**.
+3. Select **Read and write permissions** and click **Save**.
+   *(This allows GitHub Actions to commit and update `data/state.json` so you never receive duplicate posts!)*
+
+### Step 4: Run / Test
+- Go to the **Actions** tab in GitHub ➔ click **CS.RIN.RU Release Notifier** on the left.
+- Click **Run workflow** to test it immediately!
+- The workflow will automatically run **every 30 minutes** in the cloud.
+
+---
+
+## 💻 Option 2: Run Locally on Your PC
 1. Open Discord, right-click the text channel where you want updates posted.
 2. Select **Edit Channel** ➔ **Integrations** ➔ **Webhooks** ➔ **New Webhook**.
 3. Click **Copy Webhook URL**.
