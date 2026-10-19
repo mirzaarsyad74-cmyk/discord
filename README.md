@@ -8,18 +8,24 @@ An automated Discord bot that monitors newly published pre-installed Steam games
 
 ---
 
-## 🚀 1-Click Deploy to Koyeb (Free 24/7 Cloud Hosting)
+## 🚀 1-Click Deploy to Koyeb (Free 24/7 Cloud Hosting • 1-Minute Scans)
 
-Koyeb runs the bot continuously 24/7 on their **Free Tier** with **no credit card required**!
+Koyeb runs the bot continuously 24/7 on their **Free Tier** with **no credit card required**, checking for new game releases **every 60 seconds**!
 
 1. Click the button above or open [Koyeb Deploy](https://app.koyeb.com/deploy?type=git&name=game-release-monitor&repository=https://github.com/mirzaarsyad74-cmyk/discord&ports=8000;http;/).
 2. Sign up with GitHub (free, no credit card).
 3. Under **Environment variables**, click **Add Variable**:
    - `DISCORD_WEBHOOK_URL` = paste your Discord Webhook URL (or `DISCORD_BOT_TOKEN` & `DISCORD_CHANNEL_ID` for bot mode).
+   - *(Optional)* `APP_URL` = paste your Koyeb app URL (e.g. `https://game-release-monitor-yourname.koyeb.app`) to enable the built-in 20-minute keep-alive self-ping.
 4. Click **Deploy**!
-   *(The bot includes a built-in HTTP health server on port 8000 so Koyeb's health checks pass automatically).*
+
+### ⚡ Automated 24/7 Keep-Alive (Zero Setup Required)
+Koyeb free instances will never sleep thanks to two automatic safeguards:
+1. **Self-Pinger**: The bot includes an internal background daemon that pings its `/health` endpoint every 20 minutes.
+2. **GitHub Actions Watchdog**: The repository includes `.github/workflows/koyeb_keepalive.yml` that pings your Koyeb app automatically in the cloud every 25 minutes.
 
 ---
+
 
 ## ⚡ Alternative Free Option: GitHub Actions (Cron Scheduled)
 

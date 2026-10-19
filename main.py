@@ -599,8 +599,8 @@ async def run_webhook_daemon(webhook_url: str):
 
 def start_health_server():
     """
-    Starts a background HTTP health-check server on port 8000 (or $PORT).
-    Required by Koyeb Free Tier Web Services and cloud container orchestrators.
+    Starts a background HTTP health-check server on port 8000 (or $PORT)
+    and an automated keep-alive self-pinger to prevent Koyeb Free Tier from sleeping.
     """
     port_str = os.getenv("PORT", "8000")
     try:
@@ -628,6 +628,7 @@ def start_health_server():
             resp = json.dumps({
                 "status": "healthy",
                 "service": "game-release-monitor",
+                "check_interval_seconds": CHECK_INTERVAL,
                 "active_sources": active_srcs
             })
             self.wfile.write(resp.encode("utf-8"))
@@ -642,6 +643,29 @@ def start_health_server():
         logger.info(f"Health check HTTP server listening on port {port} (Koyeb/Cloud ready)")
     except Exception as e:
         logger.warning(f"Could not start health check HTTP server on port {port}: {e}")
+
+    # Automated 24/7 Keep-Alive Worker (prevents Koyeb Free Tier scale-to-zero)
+    def keep_alive_worker():
+        import time
+        import urllib.request
+        time.sleep(60)
+        app_url = os.getenv("APP_URL", "").strip() or os.getenv("KOYEB_PUBLIC_URL", "").strip()
+        while True:
+            target_url = app_url or os.getenv("APP_URL", "").strip() or os.getenv("KOYEB_PUBLIC_URL", "").strip()
+            if target_url:
+                ping_endpoint = f"{target_url.rstrip('/')}/health"
+                try:
+                    req = urllib.request.Request(ping_endpoint, headers={"User-Agent": "GameReleaseMonitor-KeepAlive/1.0"})
+                    with urllib.request.urlopen(req, timeout=10) as res:
+                        logger.info(f"⚡ Keep-alive ping sent to {ping_endpoint} (HTTP {res.status}) - keeping Koyeb active!")
+                except Exception as ex:
+                    logger.debug(f"Keep-alive ping to {ping_endpoint} failed: {ex}")
+            # Ping every 20 minutes (1200 seconds)
+            time.sleep(1200)
+
+    ka_thread = threading.Thread(target=keep_alive_worker, daemon=True)
+    ka_thread.start()
+
 
 
 def main():
