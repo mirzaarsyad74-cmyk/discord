@@ -199,7 +199,7 @@ def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
             seen_links.add(link)
 
         fg_state["seen_links"] = list(seen_links)[-200:]
-        return new_releases
+        return list(reversed(new_releases))
     except Exception as e:
         logger.error(f"Error checking FitGirl feed: {e}")
         return []
@@ -258,7 +258,7 @@ def check_dodi_feed(state: dict) -> List[Dict[str, Any]]:
             seen_links.add(link)
 
         dodi_state["seen_links"] = list(seen_links)[-200:]
-        return new_releases
+        return list(reversed(new_releases))
     except Exception as e:
         logger.error(f"Error checking DODI feed: {e}")
         return []
@@ -337,7 +337,7 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
             seen_ids.add(entry_id)
 
         cw_state["seen_ids"] = list(seen_ids)[-250:]
-        return new_items
+        return list(reversed(new_items))
     except Exception as e:
         logger.error(f"Error checking r/CrackWatch: {e}")
         return []
@@ -581,7 +581,7 @@ def check_steamrip_updates(state: dict) -> List[Dict[str, Any]]:
             seen_ids.add(it["id"])
 
     sr_state["seen_ids"] = list(seen_ids)[-300:]
-    return new_releases
+    return list(reversed(new_releases))
 
 
 def create_steamrip_embed(item: Dict[str, Any]):
@@ -691,7 +691,7 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
         seen_appids.add(appid)
 
     suo_state["seen_appids"] = list(seen_appids)[-500:]
-    return new_items
+    return list(reversed(new_items))
 
 
 def create_suo_embed(item: Dict[str, Any]):
