@@ -50,6 +50,7 @@ def load_config() -> dict:
             logger.error(f"Error reading config.json: {e}")
     return {
         "watch_steamrip": True,
+        "watch_steamunlockonennabe": True,
         "watch_steam_versions": True,
         "watch_fitgirl": True,
         "watch_dodi": True,
@@ -167,6 +168,7 @@ def create_startup_test_embed():
         timestamp=datetime.now()
     )
     embed.add_field(name="👑 SteamRIP", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🔓 SUO Wannabe", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="🎀 FitGirl Repacks", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="🌿 DODI Repacks", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="🔥 Reddit r/CrackWatch", value="`✅ Scanning every 60s`", inline=True)
@@ -204,6 +206,16 @@ async def bot_monitor_task():
                 await channel.send(embed=create_steamrip_embed(upd))
         except Exception as e:
             logger.error(f"Error checking SteamRIP feed: {e}")
+
+    # Check SteamUnlock Wannabe (https://steamunlockonennabe.click/)
+    if config.get("watch_steamunlockonennabe", True):
+        try:
+            from external_monitors import create_suo_embed
+            logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
+            for upd in monitor.check_suo_updates():
+                await channel.send(embed=create_suo_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking SUO Wannabe feed: {e}")
 
     # Check monitored game topics (CS.RIN.RU)
     if config.get("watch_csrin", False):
@@ -293,6 +305,8 @@ async def on_ready():
     active_monitors = []
     if config.get("watch_steamrip", True):
         active_monitors.append("SteamRIP")
+    if config.get("watch_steamunlockonennabe", True):
+        active_monitors.append("SUO Wannabe")
     if config.get("watch_fitgirl", True):
         active_monitors.append("FitGirl")
     if config.get("watch_dodi", True):
@@ -338,6 +352,12 @@ async def cmd_check(ctx: commands.Context):
         for upd in monitor.check_steamrip_updates():
             total_new += 1
             await ctx.send(embed=create_steamrip_embed(upd))
+
+    if config.get("watch_steamunlockonennabe", True):
+        from external_monitors import create_suo_embed
+        for upd in monitor.check_suo_updates():
+            total_new += 1
+            await ctx.send(embed=create_suo_embed(upd))
 
     if config.get("watch_fitgirl", True):
         from external_monitors import create_fitgirl_embed
@@ -453,6 +473,7 @@ async def cmd_status(ctx: commands.Context):
         color=0x6C5CE7
     )
     embed.add_field(name="SteamRIP Monitor", value="**✅ ACTIVE (steamrip.com)**" if config.get("watch_steamrip", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="SUO Wannabe", value="**✅ ACTIVE (steamunlockonennabe.click)**" if config.get("watch_steamunlockonennabe", True) else "❌ Disabled", inline=True)
     embed.add_field(name="FitGirl Repacks", value="**✅ ACTIVE**" if config.get("watch_fitgirl", True) else "❌ Disabled", inline=True)
     embed.add_field(name="DODI Repacks", value="**✅ ACTIVE**" if config.get("watch_dodi", True) else "❌ Disabled", inline=True)
     embed.add_field(name="r/CrackWatch", value="**✅ ACTIVE**" if config.get("watch_crackwatch_reddit", True) else "❌ Disabled", inline=True)
@@ -563,6 +584,14 @@ async def run_webhook_daemon(webhook_url: str):
                     safe_webhook_send(webhook, create_steamrip_embed(upd), username="SteamRIP Monitor")
                     logger.info(f"Posted SteamRIP release: {upd['title']}")
 
+            # Check SteamUnlock Wannabe (https://steamunlockonennabe.click/)
+            if current_cfg.get("watch_steamunlockonennabe", True):
+                from external_monitors import create_suo_embed
+                logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
+                for upd in monitor.check_suo_updates():
+                    safe_webhook_send(webhook, create_suo_embed(upd), username="SUO Wannabe Monitor")
+                    logger.info(f"Posted SUO Wannabe release: {upd['title']}")
+
             if current_cfg.get("watch_csrin", False):
                 for topic_raw in active_topics:
                     t_id = scraper.extract_topic_id(topic_raw)
@@ -662,6 +691,7 @@ def start_health_server():
             active_srcs = [
                 s for s, enabled in [
                     ("SteamRIP", config.get("watch_steamrip", True)),
+                    ("SUO Wannabe", config.get("watch_steamunlockonennabe", True)),
                     ("FitGirl", config.get("watch_fitgirl", True)),
                     ("DODI", config.get("watch_dodi", True)),
                     ("r/CrackWatch", config.get("watch_crackwatch_reddit", True)),

@@ -19,20 +19,56 @@ KL_TZ = timezone(timedelta(hours=8))  # Kuala Lumpur / Malaysia Time (UTC+08:00)
 
 STEAMRIP_BASE_URL = "https://steamrip.com/"
 STEAMRIP_UPDATED_URL = "https://steamrip.com/updated-games/"
+SUO_BASE_URL = "https://steamunlockonennabe.click/"
+SUO_API_URL = "https://steamunlockonennabe.duckdns.org/api/onennabe"
 FITGIRL_FEED_URL = "https://fitgirl-repacks.site/feed/"
 DODI_FEED_URL = "https://dodi-repacks.site/feed/"
 CRACKWATCH_RSS_URL = "https://old.reddit.com/r/CrackWatch/new/.rss"
 
 # Brand Colors
 COLOR_STEAMRIP = 0x6C5CE7    # Royal Indigo / Vivid Violet
+COLOR_SUO = 0x1A9FFF         # Electric Steam Cyan / Blue
 COLOR_FITGIRL = 0xFF1493     # Deep Pink / Magenta
 COLOR_DODI = 0x10AC84        # Emerald / Mint Green
 COLOR_CRACKWATCH = 0xFF4500  # Reddit Vibrant Orange-Red
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
+SUO_ICON = "https://raw.githubusercontent.com/ZackTheGrumpy/Website/refs/heads/main/logo.ico"
 FITGIRL_ICON = "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg"
 DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2021/04/cropped-cropped-DODI-Repacks-Site-Icon-192x192.png"
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
+
+SUO_GENRE_MAP = {
+    0: "Unknown Genre",
+    1: "Action",
+    2: "Strategy",
+    3: "RPG",
+    4: "Casual",
+    5: "Strategy",
+    9: "Racing",
+    10: "MMO",
+    11: "FPS",
+    12: "Puzzle",
+    18: "Sports",
+    23: "Indie",
+    25: "Adventure",
+    28: "Simulation",
+    29: "Massively Multiplayer",
+    33: "Indie",
+    34: "Indie",
+    37: "Free To Play",
+    50: "Indie",
+    51: "Animation & Modeling",
+    52: "Music",
+    53: "Software & Tools",
+    54: "Education",
+    55: "Software & Tools",
+    70: "Early Access",
+    71: "Sexual Content",
+    72: "Sexual Content",
+    73: "Adventure",
+    74: "Gore"
+}
 
 REDDIT_HEADERS = {
     "User-Agent": "python:suga.nexus.crackwatch.monitor:v1.1 (by /u/suga_nexus contact: admin@suganexus.com)"
@@ -582,5 +618,115 @@ def create_steamrip_embed(item: Dict[str, Any]):
     )
     embed.set_footer(text="SteamRIP Monitor • Pre-installed Steam Games • GMT+8", icon_url=STEAMRIP_ICON)
     return embed
+
+
+def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
+    """
+    Checks for newly published games on SteamUnlock Wannabe (https://steamunlockonennabe.click/).
+    Directly queries the SUO API and fetches high-resolution box art posters from Steam Fastly CDN.
+    """
+    suo_state = state.setdefault("suo", {})
+    seen_appids = set(suo_state.setdefault("seen_appids", []))
+
+    content = fetch_web_content(SUO_API_URL, timeout=15)
+    if not content:
+        return []
+
+    try:
+        import json
+        data = json.loads(content)
+        if not isinstance(data, list):
+            return []
+    except Exception as e:
+        logger.error(f"Error parsing SUO Wannabe JSON: {e}")
+        return []
+
+    # First run initialization: record top 300 existing appids to prevent spam
+    if not seen_appids:
+        logger.info(f"Initializing SUO Wannabe tracker with {len(data)} current catalog items...")
+        for g in data[:300]:
+            appid = str(g.get("appid") or "").strip()
+            if appid:
+                seen_appids.add(appid)
+        suo_state["seen_appids"] = list(seen_appids)[-500:]
+        return []
+
+    new_items: List[Dict[str, Any]] = []
+    # Inspect top 60 items for new additions
+    for g in data[:60]:
+        appid = str(g.get("appid") or "").strip()
+        if not appid or appid in seen_appids:
+            continue
+
+        name = g.get("name") or f"AppID {appid}"
+        size_gb = g.get("size_gb") or "N/A"
+        added_on = g.get("added_on") or ""
+        genre_id = int(g.get("primary_genre") or 0)
+        genre_name = SUO_GENRE_MAP.get(genre_id, "Game")
+        online_supp = g.get("online_supported") or "No"
+        bypass_supp = g.get("bypass_supported") or "No"
+
+        # Steam cover art & header posters
+        poster_url = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900_2x.jpg"
+        header_url = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg"
+        steam_store_url = f"https://store.steampowered.com/app/{appid}/"
+
+        # Format added time to GMT+8
+        time_kl = parse_pubdate_to_kl(added_on)
+
+        new_items.append({
+            "source": "SUO Wannabe",
+            "appid": appid,
+            "title": name,
+            "url": SUO_BASE_URL,
+            "steam_url": steam_store_url,
+            "poster": poster_url,
+            "header": header_url,
+            "size_gb": size_gb,
+            "genre": genre_name,
+            "online_supported": online_supp,
+            "bypass_supported": bypass_supp,
+            "time_kl": time_kl
+        })
+        seen_appids.add(appid)
+
+    suo_state["seen_appids"] = list(seen_appids)[-500:]
+    return new_items
+
+
+def create_suo_embed(item: Dict[str, Any]):
+    """Builds a Discord Embed for a new SteamUnlock Wannabe game release with Steam cover art."""
+    import discord
+    name = item["title"]
+    appid = item["appid"]
+
+    embed = discord.Embed(
+        title=f"🔓 [SUO Wannabe] {name}",
+        url=item.get("steam_url") or item["url"],
+        color=COLOR_SUO
+    )
+    # Thumbnail: Horizontal Steam header
+    if item.get("header"):
+        embed.set_thumbnail(url=item["header"])
+
+    # Full-width game poster: Steam 600x900 box art
+    if item.get("poster"):
+        embed.set_image(url=item["poster"])
+
+    embed.add_field(name="🎮 Game Title", value=f"**{name}**", inline=False)
+    embed.add_field(name="🆔 Steam AppID", value=f"`{appid}`", inline=True)
+    embed.add_field(name="📦 Download Size", value=f"`{item.get('size_gb', 'N/A')}`", inline=True)
+    embed.add_field(name="🏷️ Primary Genre", value=f"**{item.get('genre', 'Game')}**", inline=True)
+    embed.add_field(name="🌐 Online Play", value=f"**{item.get('online_supported', 'No')}**", inline=True)
+    embed.add_field(name="⚡ Bypass Support", value=f"**{item.get('bypass_supported', 'No')}**", inline=True)
+    embed.add_field(name="🕒 Added Time (GMT+8)", value=item.get("time_kl", parse_pubdate_to_kl("")), inline=False)
+    embed.add_field(
+        name="🔗 Game & Catalog Links",
+        value=f"👉 **[Open SUO Wannabe Catalog]({item['url']})**\n🛒 **[View on Steam Store]({item['steam_url']})**",
+        inline=False
+    )
+    embed.set_footer(text="SteamUnlock Wannabe Monitor • Steam Fastly CDN Posters • GMT+8", icon_url=SUO_ICON)
+    return embed
+
 
 

@@ -1,6 +1,6 @@
 # 🎮 Game Release & SteamRIP Discord Auto-Poster Bot
 
-An automated Discord bot that monitors newly published pre-installed Steam games and updates from **[SteamRIP](https://steamrip.com/)**, along with **FitGirl Repacks**, **DODI Repacks**, **Reddit r/CrackWatch**, and **Steam Client Versions**, automatically posting new releases into your Discord channel.
+An automated Discord bot that monitors newly published pre-installed Steam games and updates from **[SteamRIP](https://steamrip.com/)** and **[SUO Wannabe](https://steamunlockonennabe.click/)** (with full Steam box art posters), along with **FitGirl Repacks**, **DODI Repacks**, **Reddit r/CrackWatch**, and **Steam Client Versions**, automatically posting new releases into your Discord channel.
 
 [![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&name=game-release-monitor&repository=https://github.com/mirzaarsyad74-cmyk/discord&ports=8000;http;/)
 
@@ -112,6 +112,7 @@ You can customize enabled monitors and polling behavior in `config.json`:
 ```json
 {
   "watch_steamrip": true,
+  "watch_steamunlockonennabe": true,
   "watch_steam_versions": true,
   "watch_fitgirl": true,
   "watch_dodi": true,
@@ -121,11 +122,12 @@ You can customize enabled monitors and polling behavior in `config.json`:
   "subforum_feeds": [],
   "topics": [],
   "subforums": [],
-  "check_interval_seconds": 120
+  "check_interval_seconds": 60
 }
 ```
 
 - **`watch_steamrip`**: Enable/disable SteamRIP release & update monitoring (`true` by default).
+- **`watch_steamunlockonennabe`**: Enable/disable SUO Wannabe (`steamunlockonennabe.click`) monitoring with high-res Steam cover posters (`true` by default).
 - **`watch_fitgirl`**: Enable/disable FitGirl Repacks monitor.
 - **`watch_dodi`**: Enable/disable DODI Repacks monitor.
 - **`watch_crackwatch_reddit`**: Enable/disable Reddit r/CrackWatch monitor.
