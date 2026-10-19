@@ -21,6 +21,7 @@ STEAMRIP_BASE_URL = "https://steamrip.com/"
 STEAMRIP_UPDATED_URL = "https://steamrip.com/updated-games/"
 SUO_BASE_URL = "https://steamunlockonennabe.click/"
 SUO_API_URL = "https://steamunlockonennabe.duckdns.org/api/onennabe"
+SUO_DIRECT_IP_URL = "https://34.158.47.50/api/onennabe"
 FITGIRL_FEED_URL = "https://fitgirl-repacks.site/feed/"
 DODI_FEED_URL = "https://dodi-repacks.site/feed/"
 CRACKWATCH_RSS_URL = "https://old.reddit.com/r/CrackWatch/new/.rss"
@@ -620,31 +621,74 @@ def create_steamrip_embed(item: Dict[str, Any]):
     return embed
 
 
+def fetch_suo_catalog(limit: int = 150, timeout: int = 6) -> List[Dict[str, Any]]:
+    """
+    Fetches the newest games from SUO Wannabe using streaming chunk reading
+    to avoid downloading the massive 10.6MB full archive.
+    Includes automatic fallback to direct IP if DNS resolution fails.
+    """
+    import json
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    endpoints = [
+        (SUO_API_URL, {"User-Agent": STANDARD_HEADERS["User-Agent"], "Accept": "application/json"}, True),
+        (SUO_DIRECT_IP_URL, {"Host": "steamunlockonennabe.duckdns.org", "User-Agent": STANDARD_HEADERS["User-Agent"], "Accept": "application/json"}, False)
+    ]
+
+    target_bytes = limit * 450  # ~300-350 bytes per game JSON object
+
+    for url, headers, verify_ssl in endpoints:
+        try:
+            chunks = []
+            total_read = 0
+            with requests.get(url, headers=headers, stream=True, verify=verify_ssl, timeout=timeout) as r:
+                if r.status_code != 200:
+                    continue
+                for chunk in r.iter_content(chunk_size=4096, decode_unicode=True):
+                    if chunk:
+                        chunks.append(chunk)
+                        total_read += len(chunk)
+                        if total_read >= target_bytes:
+                            break
+
+            raw_text = "".join(chunks).strip()
+            if not raw_text.startswith("["):
+                continue
+
+            last_brace = raw_text.rfind("}")
+            if last_brace == -1:
+                continue
+
+            valid_json_text = raw_text[:last_brace + 1] + "]"
+            data = json.loads(valid_json_text)
+            if isinstance(data, list) and len(data) > 0:
+                return data
+        except Exception as e:
+            logger.debug(f"SUO endpoint {url} attempt failed: {e}")
+            continue
+
+    logger.warning("Notice: Could not reach SUO Wannabe API (cloud datacenter filtered or DNS blocked)")
+    return []
+
+
 def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
     """
     Checks for newly published games on SteamUnlock Wannabe (https://steamunlockonennabe.click/).
-    Directly queries the SUO API and fetches high-resolution box art posters from Steam Fastly CDN.
+    Uses streaming chunk extraction to get the latest additions in fractions of a second.
     """
     suo_state = state.setdefault("suo", {})
     seen_appids = set(suo_state.setdefault("seen_appids", []))
 
-    content = fetch_web_content(SUO_API_URL, timeout=15)
-    if not content:
+    req_limit = 250 if not seen_appids else 80
+    data = fetch_suo_catalog(limit=req_limit, timeout=6)
+    if not data:
         return []
 
-    try:
-        import json
-        data = json.loads(content)
-        if not isinstance(data, list):
-            return []
-    except Exception as e:
-        logger.error(f"Error parsing SUO Wannabe JSON: {e}")
-        return []
-
-    # First run initialization: record top 300 existing appids to prevent spam
+    # First run initialization: record top catalog items to prevent spam
     if not seen_appids:
         logger.info(f"Initializing SUO Wannabe tracker with {len(data)} current catalog items...")
-        for g in data[:300]:
+        for g in data:
             appid = str(g.get("appid") or "").strip()
             if appid:
                 seen_appids.add(appid)

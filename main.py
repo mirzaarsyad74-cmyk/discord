@@ -202,7 +202,8 @@ async def bot_monitor_task():
         try:
             from external_monitors import create_steamrip_embed
             logger.info("Checking SteamRIP (https://steamrip.com/)...")
-            for upd in monitor.check_steamrip_updates():
+            updates = await asyncio.to_thread(monitor.check_steamrip_updates)
+            for upd in updates:
                 await channel.send(embed=create_steamrip_embed(upd))
         except Exception as e:
             logger.error(f"Error checking SteamRIP feed: {e}")
@@ -212,7 +213,8 @@ async def bot_monitor_task():
         try:
             from external_monitors import create_suo_embed
             logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
-            for upd in monitor.check_suo_updates():
+            updates = await asyncio.to_thread(monitor.check_suo_updates)
+            for upd in updates:
                 await channel.send(embed=create_suo_embed(upd))
         except Exception as e:
             logger.error(f"Error checking SUO Wannabe feed: {e}")
@@ -223,7 +225,7 @@ async def bot_monitor_task():
         for topic_raw in topics:
             t_id = scraper.extract_topic_id(topic_raw)
             try:
-                events = monitor.check_topic(t_id)
+                events = await asyncio.to_thread(monitor.check_topic, t_id)
                 await send_updates_to_target(channel, events, is_webhook=False)
             except Exception as e:
                 logger.error(f"Error checking topic {t_id}: {e}")
@@ -233,7 +235,7 @@ async def bot_monitor_task():
         for f_raw in subforums:
             f_id = scraper.extract_forum_id(f_raw)
             try:
-                new_threads = monitor.check_subforum(f_id)
+                new_threads = await asyncio.to_thread(monitor.check_subforum, f_id)
                 for th in new_threads:
                     await send_new_thread_to_target(channel, th, f_id, is_webhook=False)
             except Exception as e:
@@ -242,7 +244,7 @@ async def bot_monitor_task():
         # Check Global Live Feed (all new games & Steam updates)
         if config.get("enable_global_feed", False):
             try:
-                feed_posts = monitor.check_live_feed(forum_id="10")
+                feed_posts = await asyncio.to_thread(monitor.check_live_feed, "10")
                 for post in feed_posts:
                     is_rel, release_label = classify_release(post)
                     if not is_rel:
@@ -255,7 +257,7 @@ async def bot_monitor_task():
     # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
     if config.get("watch_steam_versions", True):
         try:
-            steam_updates = monitor.check_steam_client_version()
+            steam_updates = await asyncio.to_thread(monitor.check_steam_client_version)
             if steam_updates:
                 from steam_client_watcher import create_steam_monitor_embed
                 for upd in steam_updates:
@@ -274,7 +276,8 @@ async def bot_monitor_task():
         try:
             from external_monitors import create_fitgirl_embed
             logger.info("Checking FitGirl Repacks (https://fitgirl-repacks.site/)...")
-            for upd in monitor.check_fitgirl_updates():
+            updates = await asyncio.to_thread(monitor.check_fitgirl_updates)
+            for upd in updates:
                 await channel.send(embed=create_fitgirl_embed(upd))
         except Exception as e:
             logger.error(f"Error checking FitGirl feed: {e}")
@@ -284,7 +287,8 @@ async def bot_monitor_task():
         try:
             from external_monitors import create_dodi_embed
             logger.info("Checking DODI Repacks (https://dodi-repacks.site/)...")
-            for upd in monitor.check_dodi_updates():
+            updates = await asyncio.to_thread(monitor.check_dodi_updates)
+            for upd in updates:
                 await channel.send(embed=create_dodi_embed(upd))
         except Exception as e:
             logger.error(f"Error checking DODI feed: {e}")
@@ -294,7 +298,8 @@ async def bot_monitor_task():
         try:
             from external_monitors import create_crackwatch_embed
             logger.info("Checking Reddit r/CrackWatch (r/CrackWatch)...")
-            for upd in monitor.check_crackwatch_updates():
+            updates = await asyncio.to_thread(monitor.check_crackwatch_updates)
+            for upd in updates:
                 await channel.send(embed=create_crackwatch_embed(upd))
         except Exception as e:
             logger.error(f"Error checking r/CrackWatch feed: {e}")
@@ -349,31 +354,31 @@ async def cmd_check(ctx: commands.Context):
 
     if config.get("watch_steamrip", True):
         from external_monitors import create_steamrip_embed
-        for upd in monitor.check_steamrip_updates():
+        for upd in await asyncio.to_thread(monitor.check_steamrip_updates):
             total_new += 1
             await ctx.send(embed=create_steamrip_embed(upd))
 
     if config.get("watch_steamunlockonennabe", True):
         from external_monitors import create_suo_embed
-        for upd in monitor.check_suo_updates():
+        for upd in await asyncio.to_thread(monitor.check_suo_updates):
             total_new += 1
             await ctx.send(embed=create_suo_embed(upd))
 
     if config.get("watch_fitgirl", True):
         from external_monitors import create_fitgirl_embed
-        for upd in monitor.check_fitgirl_updates():
+        for upd in await asyncio.to_thread(monitor.check_fitgirl_updates):
             total_new += 1
             await ctx.send(embed=create_fitgirl_embed(upd))
 
     if config.get("watch_dodi", True):
         from external_monitors import create_dodi_embed
-        for upd in monitor.check_dodi_updates():
+        for upd in await asyncio.to_thread(monitor.check_dodi_updates):
             total_new += 1
             await ctx.send(embed=create_dodi_embed(upd))
 
     if config.get("watch_crackwatch_reddit", True):
         from external_monitors import create_crackwatch_embed
-        for upd in monitor.check_crackwatch_updates():
+        for upd in await asyncio.to_thread(monitor.check_crackwatch_updates):
             total_new += 1
             await ctx.send(embed=create_crackwatch_embed(upd))
 
@@ -381,7 +386,7 @@ async def cmd_check(ctx: commands.Context):
         topics = config.get("topics", [])
         for topic_raw in topics:
             t_id = scraper.extract_topic_id(topic_raw)
-            events = monitor.check_topic(t_id)
+            events = await asyncio.to_thread(monitor.check_topic, t_id)
             total_new += len(events.new_posts)
             await send_updates_to_target(ctx.channel, events, is_webhook=False)
 
@@ -580,7 +585,8 @@ async def run_webhook_daemon(webhook_url: str):
             if current_cfg.get("watch_steamrip", True):
                 from external_monitors import create_steamrip_embed
                 logger.info("Checking SteamRIP (https://steamrip.com/)...")
-                for upd in monitor.check_steamrip_updates():
+                updates = await asyncio.to_thread(monitor.check_steamrip_updates)
+                for upd in updates:
                     safe_webhook_send(webhook, create_steamrip_embed(upd), username="SteamRIP Monitor")
                     logger.info(f"Posted SteamRIP release: {upd['title']}")
 
@@ -588,7 +594,8 @@ async def run_webhook_daemon(webhook_url: str):
             if current_cfg.get("watch_steamunlockonennabe", True):
                 from external_monitors import create_suo_embed
                 logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
-                for upd in monitor.check_suo_updates():
+                updates = await asyncio.to_thread(monitor.check_suo_updates)
+                for upd in updates:
                     safe_webhook_send(webhook, create_suo_embed(upd), username="SUO Wannabe Monitor")
                     logger.info(f"Posted SUO Wannabe release: {upd['title']}")
 
@@ -596,20 +603,20 @@ async def run_webhook_daemon(webhook_url: str):
                 for topic_raw in active_topics:
                     t_id = scraper.extract_topic_id(topic_raw)
                     logger.info(f"Checking CS.RIN.RU topic {t_id}...")
-                    events = monitor.check_topic(t_id)
+                    events = await asyncio.to_thread(monitor.check_topic, t_id)
                     await send_updates_to_target(webhook, events, is_webhook=True)
 
                 for f_raw in active_subforums:
                     f_id = scraper.extract_forum_id(f_raw)
                     logger.info(f"Checking subforum {f_id} for new threads...")
-                    new_threads = monitor.check_subforum(f_id)
+                    new_threads = await asyncio.to_thread(monitor.check_subforum, f_id)
                     for th in new_threads:
                         await send_new_thread_to_target(webhook, th, f_id, is_webhook=True)
 
                 # Check Global Live Feed (all new games & Steam updates)
                 if current_cfg.get("enable_global_feed", False):
                     logger.info("Checking CS.RIN.RU Global Live Feed (f=10 Main Forum)...")
-                    feed_posts = monitor.check_live_feed(forum_id="10")
+                    feed_posts = await asyncio.to_thread(monitor.check_live_feed, "10")
                     for post in feed_posts:
                         is_rel, release_label = classify_release(post)
                         if not is_rel:
@@ -621,7 +628,7 @@ async def run_webhook_daemon(webhook_url: str):
             # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
             if current_cfg.get("watch_steam_versions", True):
                 logger.info("Checking OpenSteam001/steam-monitor for Steam Client updates...")
-                steam_updates = monitor.check_steam_client_version()
+                steam_updates = await asyncio.to_thread(monitor.check_steam_client_version)
                 if steam_updates:
                     from steam_client_watcher import create_steam_monitor_embed
                     for upd in steam_updates:
@@ -638,7 +645,8 @@ async def run_webhook_daemon(webhook_url: str):
             if current_cfg.get("watch_fitgirl", True):
                 from external_monitors import create_fitgirl_embed
                 logger.info("Checking FitGirl Repacks (https://fitgirl-repacks.site/)...")
-                for upd in monitor.check_fitgirl_updates():
+                updates = await asyncio.to_thread(monitor.check_fitgirl_updates)
+                for upd in updates:
                     safe_webhook_send(webhook, create_fitgirl_embed(upd), username="FitGirl Repacks")
                     logger.info(f"Posted FitGirl Repack: {upd['title']}")
 
@@ -646,7 +654,8 @@ async def run_webhook_daemon(webhook_url: str):
             if current_cfg.get("watch_dodi", True):
                 from external_monitors import create_dodi_embed
                 logger.info("Checking DODI Repacks (https://dodi-repacks.site/)...")
-                for upd in monitor.check_dodi_updates():
+                updates = await asyncio.to_thread(monitor.check_dodi_updates)
+                for upd in updates:
                     safe_webhook_send(webhook, create_dodi_embed(upd), username="DODI Repacks")
                     logger.info(f"Posted DODI Repack: {upd['title']}")
 
@@ -654,7 +663,8 @@ async def run_webhook_daemon(webhook_url: str):
             if current_cfg.get("watch_crackwatch_reddit", True):
                 from external_monitors import create_crackwatch_embed
                 logger.info("Checking Reddit r/CrackWatch (r/CrackWatch)...")
-                for upd in monitor.check_crackwatch_updates():
+                updates = await asyncio.to_thread(monitor.check_crackwatch_updates)
+                for upd in updates:
                     safe_webhook_send(webhook, create_crackwatch_embed(upd), username="Reddit CrackWatch")
                     logger.info(f"Posted r/CrackWatch: {upd['title']}")
 
