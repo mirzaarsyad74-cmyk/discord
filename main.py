@@ -157,6 +157,25 @@ async def send_new_thread_to_target(target, thread_info: dict, forum_id: str, is
         logger.error(f"Failed to send new thread alert: {e}")
 
 
+def create_startup_test_embed():
+    """Builds a test embed sent once upon boot to confirm to Discord that the monitor is alive."""
+    from datetime import datetime
+    embed = discord.Embed(
+        title="🟢 Game Release Monitor Online & Active",
+        description="Bot has booted successfully on Koyeb (24/7 cloud) and is actively scanning for new releases!",
+        color=0x2ECC71,
+        timestamp=datetime.now()
+    )
+    embed.add_field(name="👑 SteamRIP", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🎀 FitGirl Repacks", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🌿 DODI Repacks", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🔥 Reddit r/CrackWatch", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="⚙️ Steam Client Updates", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="⚡ 24/7 Keep-Alive", value="`✅ Armed & Running`", inline=True)
+    embed.set_footer(text="Game Release Monitor • Live Startup Test • GMT+8")
+    return embed
+
+
 # ==============================================================================
 # MODE A: Discord Bot (Token)
 # ==============================================================================
@@ -242,6 +261,7 @@ async def bot_monitor_task():
     if config.get("watch_fitgirl", True):
         try:
             from external_monitors import create_fitgirl_embed
+            logger.info("Checking FitGirl Repacks (https://fitgirl-repacks.site/)...")
             for upd in monitor.check_fitgirl_updates():
                 await channel.send(embed=create_fitgirl_embed(upd))
         except Exception as e:
@@ -251,6 +271,7 @@ async def bot_monitor_task():
     if config.get("watch_dodi", True):
         try:
             from external_monitors import create_dodi_embed
+            logger.info("Checking DODI Repacks (https://dodi-repacks.site/)...")
             for upd in monitor.check_dodi_updates():
                 await channel.send(embed=create_dodi_embed(upd))
         except Exception as e:
@@ -260,6 +281,7 @@ async def bot_monitor_task():
     if config.get("watch_crackwatch_reddit", True):
         try:
             from external_monitors import create_crackwatch_embed
+            logger.info("Checking Reddit r/CrackWatch (r/CrackWatch)...")
             for upd in monitor.check_crackwatch_updates():
                 await channel.send(embed=create_crackwatch_embed(upd))
         except Exception as e:
@@ -293,6 +315,15 @@ async def on_ready():
 
     if not bot_monitor_task.is_running():
         bot_monitor_task.start()
+
+    if DISCORD_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(int(DISCORD_CHANNEL_ID))
+            if channel:
+                await channel.send(embed=create_startup_test_embed())
+                logger.info("🚀 Sent startup test embed to Discord channel!")
+        except Exception as ex:
+            logger.warning(f"Could not send startup test embed: {ex}")
 
 
 # Bot Commands
@@ -510,6 +541,13 @@ async def run_webhook_daemon(webhook_url: str):
             logger.info(f"Initializing subforum {f_id} state...")
             monitor.check_subforum(f_id, is_first_run_init=True)
 
+    # Send test post on first boot so user immediately knows the bot is alive!
+    try:
+        safe_webhook_send(webhook, create_startup_test_embed(), username="Release Monitor Bot")
+        logger.info("🚀 Sent startup test embed to Discord webhook!")
+    except Exception as ex:
+        logger.warning(f"Could not send startup test embed: {ex}")
+
     while True:
         try:
             # Re-read topics from config each loop so user edits in config.json apply dynamically!
@@ -570,6 +608,7 @@ async def run_webhook_daemon(webhook_url: str):
             # Check FitGirl Repacks (Signature Magenta Color)
             if current_cfg.get("watch_fitgirl", True):
                 from external_monitors import create_fitgirl_embed
+                logger.info("Checking FitGirl Repacks (https://fitgirl-repacks.site/)...")
                 for upd in monitor.check_fitgirl_updates():
                     safe_webhook_send(webhook, create_fitgirl_embed(upd), username="FitGirl Repacks")
                     logger.info(f"Posted FitGirl Repack: {upd['title']}")
@@ -577,6 +616,7 @@ async def run_webhook_daemon(webhook_url: str):
             # Check DODI Repacks (Signature Emerald Green Color)
             if current_cfg.get("watch_dodi", True):
                 from external_monitors import create_dodi_embed
+                logger.info("Checking DODI Repacks (https://dodi-repacks.site/)...")
                 for upd in monitor.check_dodi_updates():
                     safe_webhook_send(webhook, create_dodi_embed(upd), username="DODI Repacks")
                     logger.info(f"Posted DODI Repack: {upd['title']}")
@@ -584,6 +624,7 @@ async def run_webhook_daemon(webhook_url: str):
             # Check Reddit r/CrackWatch (Signature Orange-Red Color)
             if current_cfg.get("watch_crackwatch_reddit", True):
                 from external_monitors import create_crackwatch_embed
+                logger.info("Checking Reddit r/CrackWatch (r/CrackWatch)...")
                 for upd in monitor.check_crackwatch_updates():
                     safe_webhook_send(webhook, create_crackwatch_embed(upd), username="Reddit CrackWatch")
                     logger.info(f"Posted r/CrackWatch: {upd['title']}")
