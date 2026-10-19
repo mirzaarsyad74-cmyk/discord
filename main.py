@@ -695,6 +695,53 @@ def start_health_server():
 
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
+            if self.path.startswith("/debug"):
+                import socket
+                import urllib3
+                urllib3.disable_warnings()
+                report = {}
+                
+                # 1. DNS
+                try:
+                    ip = socket.gethostbyname("steamunlockonennabe.duckdns.org")
+                    report["dns"] = f"Resolved to {ip}"
+                except Exception as ex:
+                    report["dns"] = f"Failed: {type(ex).__name__}: {ex}"
+
+                # 2. Direct TCP connect to 34.158.47.50:443
+                try:
+                    s = socket.create_connection(("34.158.47.50", 443), timeout=3)
+                    s.close()
+                    report["tcp_ip"] = "Success (port 443 open)"
+                except Exception as ex:
+                    report["tcp_ip"] = f"Failed: {type(ex).__name__}: {ex}"
+
+                # 3. Direct TCP connect to domain:443
+                try:
+                    s = socket.create_connection(("steamunlockonennabe.duckdns.org", 443), timeout=3)
+                    s.close()
+                    report["tcp_domain"] = "Success (port 443 open)"
+                except Exception as ex:
+                    report["tcp_domain"] = f"Failed: {type(ex).__name__}: {ex}"
+
+                # 4. HTTP request
+                for target, headers, verify in [
+                    ("https://steamunlockonennabe.duckdns.org/api/onennabe", {"User-Agent": "Mozilla/5.0"}, True),
+                    ("https://34.158.47.50/api/onennabe", {"Host": "steamunlockonennabe.duckdns.org", "User-Agent": "Mozilla/5.0"}, False)
+                ]:
+                    try:
+                        r = requests.get(target, headers=headers, verify=verify, timeout=4, stream=True)
+                        report[target] = f"HTTP {r.status_code}"
+                        r.close()
+                    except Exception as ex:
+                        report[target] = f"Failed: {type(ex).__name__}: {ex}"
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(report, indent=2).encode("utf-8"))
+                return
+
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
