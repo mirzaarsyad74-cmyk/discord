@@ -85,18 +85,40 @@ def parse_pubdate_to_kl(date_str: str) -> str:
     return f"`{date_str} GMT+8`"
 
 
+def fetch_web_content(url: str, headers: dict = None, timeout: int = 15) -> Optional[str]:
+    """Fetches web content using curl_cffi (impersonating Chrome) with fallback to requests."""
+    req_headers = headers or STANDARD_HEADERS
+    if cffi_requests:
+        try:
+            r = cffi_requests.get(url, impersonate="chrome120", timeout=timeout)
+            if r.status_code == 200:
+                return r.text
+            logger.warning(f"curl_cffi fetch {url} returned HTTP {r.status_code}")
+        except Exception as e:
+            logger.debug(f"curl_cffi failed for {url}: {e}, falling back to requests")
+
+    try:
+        r = requests.get(url, headers=req_headers, timeout=timeout)
+        if r.status_code == 200:
+            return r.text
+        logger.warning(f"requests fetch {url} returned HTTP {r.status_code}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to fetch {url}: {e}")
+        return None
+
+
 def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
     """Fetches new releases from FitGirl Repacks official feed."""
     fg_state = state.setdefault("fitgirl", {})
     seen_links = set(fg_state.setdefault("seen_links", []))
 
     try:
-        res = requests.get(FITGIRL_FEED_URL, headers=STANDARD_HEADERS, timeout=12)
-        if res.status_code != 200:
-            logger.warning(f"Failed to fetch FitGirl feed: HTTP {res.status_code}")
+        content = fetch_web_content(FITGIRL_FEED_URL, timeout=15)
+        if not content:
             return []
 
-        soup = BeautifulSoup(res.content, "html.parser")
+        soup = BeautifulSoup(content, "html.parser")
         items = soup.find_all("item")
         if not items:
             return []
@@ -153,12 +175,11 @@ def check_dodi_feed(state: dict) -> List[Dict[str, Any]]:
     seen_links = set(dodi_state.setdefault("seen_links", []))
 
     try:
-        res = requests.get(DODI_FEED_URL, headers=STANDARD_HEADERS, timeout=12)
-        if res.status_code != 200:
-            logger.warning(f"Failed to fetch DODI feed: HTTP {res.status_code}")
+        content = fetch_web_content(DODI_FEED_URL, timeout=15)
+        if not content:
             return []
 
-        soup = BeautifulSoup(res.content, "html.parser")
+        soup = BeautifulSoup(content, "html.parser")
         items = soup.find_all("item")
         if not items:
             return []
@@ -374,27 +395,7 @@ def check_steamrip_updates(state: dict) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
 
     # Helper for fetching via curl_cffi or requests
-    def get_html(url: str) -> Optional[str]:
-        if cffi_requests:
-            try:
-                r = cffi_requests.get(url, impersonate="chrome120", timeout=15)
-                if r.status_code == 200:
-                    return r.text
-                logger.warning(f"Failed to fetch SteamRIP ({url}): HTTP {r.status_code}")
-                return None
-            except Exception as e:
-                logger.error(f"Error requesting {url} with curl_cffi: {e}")
-                return None
-        else:
-            try:
-                r = requests.get(url, headers=STANDARD_HEADERS, timeout=15)
-                if r.status_code == 200:
-                    return r.text
-                logger.warning(f"Failed to fetch SteamRIP ({url}): HTTP {r.status_code}")
-                return None
-            except Exception as e:
-                logger.error(f"Error requesting {url} with requests: {e}")
-                return None
+    get_html = fetch_web_content
 
     # 1. Fetch Home Page (New Game Releases)
     home_html = get_html(STEAMRIP_BASE_URL)

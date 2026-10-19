@@ -180,6 +180,7 @@ async def bot_monitor_task():
     if config.get("watch_steamrip", True):
         try:
             from external_monitors import create_steamrip_embed
+            logger.info("Checking SteamRIP (https://steamrip.com/)...")
             for upd in monitor.check_steamrip_updates():
                 await channel.send(embed=create_steamrip_embed(upd))
         except Exception as e:
@@ -519,6 +520,7 @@ async def run_webhook_daemon(webhook_url: str):
             # Check SteamRIP (https://steamrip.com/ - Pre-installed Steam Games)
             if current_cfg.get("watch_steamrip", True):
                 from external_monitors import create_steamrip_embed
+                logger.info("Checking SteamRIP (https://steamrip.com/)...")
                 for upd in monitor.check_steamrip_updates():
                     safe_webhook_send(webhook, create_steamrip_embed(upd), username="SteamRIP Monitor")
                     logger.info(f"Posted SteamRIP release: {upd['title']}")
@@ -649,9 +651,9 @@ def start_health_server():
         import time
         import urllib.request
         time.sleep(60)
-        app_url = os.getenv("APP_URL", "").strip() or os.getenv("KOYEB_PUBLIC_URL", "").strip()
+        app_url = os.getenv("APP_URL", "").strip() or os.getenv("KOYEB_PUBLIC_URL", "").strip() or "https://increasing-saree-yuno74-2b5073cf.koyeb.app"
         while True:
-            target_url = app_url or os.getenv("APP_URL", "").strip() or os.getenv("KOYEB_PUBLIC_URL", "").strip()
+            target_url = app_url or os.getenv("APP_URL", "").strip() or os.getenv("KOYEB_PUBLIC_URL", "").strip() or "https://increasing-saree-yuno74-2b5073cf.koyeb.app"
             if target_url:
                 ping_endpoint = f"{target_url.rstrip('/')}/health"
                 try:

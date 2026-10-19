@@ -14,12 +14,8 @@ jobs:
         env:
           KOYEB_APP_URL: ${{ secrets.KOYEB_APP_URL }}
         run: |
-          if [ -n "$KOYEB_APP_URL" ]; then
-            URL="${KOYEB_APP_URL%/}/health"
-            echo "Pinging $URL to keep Koyeb instance active..."
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 "$URL" || true)
-            echo "Received HTTP $HTTP_CODE from Koyeb (Keep-alive successful!)"
-          else
-            echo "KOYEB_APP_URL is not configured yet in GitHub Secrets."
-            echo "Optional: Add KOYEB_APP_URL (e.g. https://your-app.koyeb.app) in GitHub Secrets for automated cloud keep-alive."
-          fi
+          TARGET_URL="${KOYEB_APP_URL:-https://increasing-saree-yuno74-2b5073cf.koyeb.app}"
+          URL="${TARGET_URL%/}/health"
+          echo "Pinging $URL to keep Koyeb instance active..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 "$URL" || true)
+          echo "Received HTTP $HTTP_CODE from Koyeb (Keep-alive successful!)"
