@@ -85,7 +85,7 @@ def parse_pubdate_to_kl(date_str: str) -> str:
     return f"`{date_str} GMT+8`"
 
 
-def fetch_web_content(url: str, headers: dict = None, timeout: int = 15) -> Optional[str]:
+def fetch_web_content(url: str, headers: dict = None, timeout: int = 8) -> Optional[str]:
     """Fetches web content using curl_cffi (impersonating Chrome) with fallback to requests."""
     req_headers = headers or STANDARD_HEADERS
     if cffi_requests:
@@ -104,7 +104,7 @@ def fetch_web_content(url: str, headers: dict = None, timeout: int = 15) -> Opti
         logger.warning(f"requests fetch {url} returned HTTP {r.status_code}")
         return None
     except Exception as e:
-        logger.error(f"Failed to fetch {url}: {e}")
+        logger.warning(f"Notice: Could not reach {url} (cloud datacenter filtered): {e}")
         return None
 
 
@@ -114,7 +114,7 @@ def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
     seen_links = set(fg_state.setdefault("seen_links", []))
 
     try:
-        content = fetch_web_content(FITGIRL_FEED_URL, timeout=15)
+        content = fetch_web_content(FITGIRL_FEED_URL, timeout=6)
         if not content:
             return []
 
