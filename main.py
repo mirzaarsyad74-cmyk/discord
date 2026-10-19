@@ -724,6 +724,7 @@ def start_health_server():
                 except Exception as ex:
                     report["tcp_domain"] = f"Failed: {type(ex).__name__}: {ex}"
 
+                import requests
                 # 4. HTTP request
                 for target, headers, verify in [
                     ("https://steamunlockonennabe.duckdns.org/api/onennabe", {"User-Agent": "Mozilla/5.0"}, True),
@@ -731,10 +732,19 @@ def start_health_server():
                 ]:
                     try:
                         r = requests.get(target, headers=headers, verify=verify, timeout=4, stream=True)
-                        report[target] = f"HTTP {r.status_code}"
+                        first_chunk = next(r.iter_content(chunk_size=512, decode_unicode=True))
+                        report[target] = f"HTTP {r.status_code}, first_50={first_chunk[:50]!r}"
                         r.close()
                     except Exception as ex:
                         report[target] = f"Failed: {type(ex).__name__}: {ex}"
+
+                # 5. Test fetch_suo_catalog
+                try:
+                    from external_monitors import fetch_suo_catalog
+                    cat = fetch_suo_catalog(limit=50, timeout=4)
+                    report["fetch_suo_catalog"] = f"Success: {len(cat)} games parsed, top: {cat[0].get('name') if cat else None}"
+                except Exception as ex:
+                    report["fetch_suo_catalog"] = f"Failed: {type(ex).__name__}: {ex}"
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
