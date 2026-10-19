@@ -2,34 +2,27 @@
 
 An automated Discord bot that monitors newly published pre-installed Steam games and updates from **[SteamRIP](https://steamrip.com/)**, along with **FitGirl Repacks**, **DODI Repacks**, **Reddit r/CrackWatch**, and **Steam Client Versions**, automatically posting new releases into your Discord channel.
 
+[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&name=game-release-monitor&repository=https://github.com/mirzaarsyad74-cmyk/discord&ports=8000;http;/)
+
 *(Note: CS.RIN.RU has been removed from active monitoring as requested).*
 
 ---
 
-## ✨ Features
+## 🚀 1-Click Deploy to Koyeb (Free 24/7 Cloud Hosting)
 
-- **👑 SteamRIP Monitoring (`https://steamrip.com/`)**:
-  - Automatically scrapes newly added game releases from the SteamRIP homepage and game patches from the updated games directory.
-  - Seamlessly bypasses Cloudflare bot protection using high-performance TLS/HTTP browser impersonation (`curl_cffi`).
-  - Extracts full game titles, version/build numbers, release year, file size, game categories, and official download links.
-  - Embeds clean game cover artwork and thumbnails.
-- **🎀 Repack & Scene Crack Monitors**:
-  - **FitGirl Repacks**: Official RSS feed monitor with signature Deep Pink/Magenta embeds.
-  - **DODI Repacks**: Official RSS feed monitor with signature Emerald Green embeds.
-  - **Reddit r/CrackWatch**: Monitored for scene cracks, P2P releases, and Denuvo crack/bypass announcements.
-- **⚡ Steam Client Version Watch**:
-  - Tracks Valve's `OpenSteam001/steam-monitor` protobuf branches for Stable and Beta client builds.
-- **🕒 Localized Time Formatting**: All release timestamps are automatically parsed and converted to Kuala Lumpur Time (`GMT+8`).
-- **Clean Discord Embeds**: Distinct color-coded embeds with direct download links, build details, and metadata.
-- **Dual Running Modes**:
-  - **Webhook Mode (Easiest)**: No bot registration needed. Just paste your Discord Webhook URL.
-  - **Bot Mode (Interactive)**: Connects as a bot with commands (`!status`, `!check`, `!list`).
-- **Persistent State**: Stores seen post IDs and release signatures in `data/state.json` to prevent duplicates across restarts.
+Koyeb runs the bot continuously 24/7 on their **Free Tier** with **no credit card required**!
 
+1. Click the button above or open [Koyeb Deploy](https://app.koyeb.com/deploy?type=git&name=game-release-monitor&repository=https://github.com/mirzaarsyad74-cmyk/discord&ports=8000;http;/).
+2. Sign up with GitHub (free, no credit card).
+3. Under **Environment variables**, click **Add Variable**:
+   - `DISCORD_WEBHOOK_URL` = paste your Discord Webhook URL (or `DISCORD_BOT_TOKEN` & `DISCORD_CHANNEL_ID` for bot mode).
+4. Click **Deploy**!
+   *(The bot includes a built-in HTTP health server on port 8000 so Koyeb's health checks pass automatically).*
 
 ---
 
-## ⚡ Option 1: 100% Free 24/7 Cloud Automation (GitHub Actions)
+## ⚡ Alternative Free Option: GitHub Actions (Cron Scheduled)
+
 
 You can run this bot completely free in the cloud on GitHub Actions—**no server or PC running needed!**
 

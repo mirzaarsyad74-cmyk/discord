@@ -594,10 +594,58 @@ async def run_webhook_daemon(webhook_url: str):
 
 
 # ==============================================================================
-# Application Entry Point
+# Application Entry Point & Cloud Health Server
 # ==============================================================================
 
+def start_health_server():
+    """
+    Starts a background HTTP health-check server on port 8000 (or $PORT).
+    Required by Koyeb Free Tier Web Services and cloud container orchestrators.
+    """
+    port_str = os.getenv("PORT", "8000")
+    try:
+        port = int(port_str)
+    except ValueError:
+        port = 8000
+
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import threading
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            active_srcs = [
+                s for s, enabled in [
+                    ("SteamRIP", config.get("watch_steamrip", True)),
+                    ("FitGirl", config.get("watch_fitgirl", True)),
+                    ("DODI", config.get("watch_dodi", True)),
+                    ("r/CrackWatch", config.get("watch_crackwatch_reddit", True)),
+                    ("Steam Client", config.get("watch_steam_versions", True)),
+                ] if enabled
+            ]
+            resp = json.dumps({
+                "status": "healthy",
+                "service": "game-release-monitor",
+                "active_sources": active_srcs
+            })
+            self.wfile.write(resp.encode("utf-8"))
+
+        def log_message(self, format, *args):
+            pass  # Suppress probe spam in logs
+
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        logger.info(f"Health check HTTP server listening on port {port} (Koyeb/Cloud ready)")
+    except Exception as e:
+        logger.warning(f"Could not start health check HTTP server on port {port}: {e}")
+
+
 def main():
+    start_health_server()
     has_bot_token = bool(DISCORD_BOT_TOKEN and DISCORD_BOT_TOKEN != "your_discord_bot_token_here")
     has_webhook = bool(DISCORD_WEBHOOK_URL and DISCORD_WEBHOOK_URL.startswith("http"))
 
@@ -605,7 +653,7 @@ def main():
         if not DISCORD_CHANNEL_ID or DISCORD_CHANNEL_ID == "your_discord_channel_id_here":
             logger.error(
                 "DISCORD_BOT_TOKEN is set, but DISCORD_CHANNEL_ID is missing!\n"
-                "Please open .env and set DISCORD_CHANNEL_ID to your target channel ID."
+                "Please set DISCORD_CHANNEL_ID in your environment variables."
             )
             sys.exit(1)
         logger.info("Starting Discord Bot client...")
@@ -616,19 +664,24 @@ def main():
         print("\n" + "=" * 65)
         print("⚠️  CONFIGURATION REQUIRED")
         print("=" * 65)
-        print("No valid Discord Bot Token or Webhook URL found in .env!\n")
+        print("No valid Discord Bot Token or Webhook URL found in environment!\n")
         print("Choose ONE of the following two quick options to start:\n")
         print("Option 1: Webhook Mode (Easiest - 1 minute setup)")
         print("  1. In Discord, right click your channel -> Edit Channel -> Integrations -> Webhooks.")
         print("  2. Click 'New Webhook', click 'Copy Webhook URL'.")
-        print("  3. Open '.env' in this folder and paste it into DISCORD_WEBHOOK_URL=...\n")
+        print("  3. Set DISCORD_WEBHOOK_URL in .env (or Koyeb Environment variables)\n")
         print("Option 2: Bot Mode (Interactive with !commands & /slash commands)")
         print("  1. Create a bot at https://discord.com/developers/applications")
-        print("  2. Copy Bot Token into DISCORD_BOT_TOKEN=...")
-        print("  3. Copy your Channel ID into DISCORD_CHANNEL_ID=...")
+        print("  2. Set DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID\n")
         print("=" * 65 + "\n")
-        sys.exit(1)
+        if os.getenv("PORT") or os.getenv("KOYEB_APP_NAME"):
+            import time
+            while True:
+                time.sleep(60)
+        else:
+            sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
+
