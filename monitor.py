@@ -353,6 +353,14 @@ class ForumMonitor:
         self.save_state()
         return updates
 
+    def check_steamrip_updates(self) -> List[Dict[str, Any]]:
+        """Checks for newly published games and updates on SteamRIP (https://steamrip.com/)."""
+        from external_monitors import check_steamrip_updates
+        updates = check_steamrip_updates(self.state)
+        self.save_state()
+        return updates
+
+
     def remove_topic(self, topic_id: str):
         topic_id = self.scraper.extract_topic_id(topic_id)
         if "topics" in self.state and topic_id in self.state["topics"]:

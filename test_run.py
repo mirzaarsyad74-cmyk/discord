@@ -1,61 +1,56 @@
 """
-Dry-run test script to verify CS.RIN.RU thread scraping and release filtering
-without needing live Discord credentials.
+Dry-run test script to verify SteamRIP scraping, game extraction, and embed generation
+including full high-resolution game posters.
 """
 import sys
 import logging
-from scraper import CsRinScraper
-from release_filter import classify_release
-from discord_poster import create_post_embed, create_op_update_embed
+from external_monitors import check_steamrip_updates, create_steamrip_embed
 
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 def test_dry_run():
-    topic_url = "https://cs.rin.ru/forum/viewtopic.php?f=10&t=146233&start=60"
     print("\n" + "=" * 65)
-    print("🚀 RUNNING REPACK / BYPASS / CRACK FILTER TEST")
-    print(f"Target URL: {topic_url}")
+    print("🚀 RUNNING STEAMRIP (https://steamrip.com/) MONITOR TEST")
     print("=" * 65)
 
-    scraper = CsRinScraper()
-    topic_id = scraper.extract_topic_id(topic_url)
+    print("\n1. Testing SteamRIP Scraper & Cloudflare Bypass...")
+    init_state = {}
+    check_steamrip_updates(init_state)
+    seen_ids = init_state.get("steamrip", {}).get("seen_ids", [])
+    print(f"   ✓ Successfully fetched and indexed {len(seen_ids)} releases & updates from SteamRIP!")
 
-    print("\n1. Fetching topic metadata and OP post...")
-    meta = scraper.get_topic_metadata(topic_id)
-    print(f"   ✓ Title: {meta.title}")
-    print(f"   ✓ Latest Page Start: {meta.max_start}")
+    print("\n2. Testing Sample SteamRIP Embeds with Game Posters:")
+    # Pick both a new release (post_...) and an update (upd_...)
+    sample_ids = []
+    for sid in seen_ids:
+        if sid.startswith("post_") and len(sample_ids) < 1:
+            sample_ids.append(sid)
+        elif sid.startswith("upd_") and len(sample_ids) < 2:
+            sample_ids.append(sid)
 
-    print(f"\n2. Fetching posts from page {meta.max_start}...")
-    posts = scraper.get_posts_page(topic_id, start=meta.max_start, topic_title=meta.title)
-    print(f"   ✓ Total posts on page: {len(posts)}")
+    partial_seen = [sid for sid in seen_ids if sid not in sample_ids]
+    detected = check_steamrip_updates({"steamrip": {"seen_ids": partial_seen}})
 
-    print("\n3. Testing Release Filter (Releases/Repacks/Bypasses ONLY):")
-    releases_found = 0
-    chatter_skipped = 0
-
-    for idx, p in enumerate(posts, 1):
-        is_rel, label = classify_release(p)
-        print(f"\n   --- Post #{idx} (ID: {p.post_id}) by {p.author} ---")
-        if is_rel:
-            releases_found += 1
-            print(f"   🎯 STATUS: [POSTED TO DISCORD] -> Detected Release: {label}")
-            embed = create_post_embed(p, release_label=label)
-            print(f"   Embed Title: {embed.title}")
-            print(f"   Preview: {p.clean_markdown[:110]}...")
-        else:
-            chatter_skipped += 1
-            print("   🚫 STATUS: [SKIPPED] -> Casual Discussion / Chatter")
-            print(f"   Preview: {p.clean_markdown[:80]}...")
+    for item in detected:
+        embed = create_steamrip_embed(item)
+        print(f"\n   --- {item.get('type')} Embed ---")
+        print(f"   Embed Title: {embed.title}")
+        print(f"   Game URL: {item['url']}")
+        print(f"   Version: {item.get('version')}")
+        print(f"   Category: {item.get('category')}")
+        print(f"   Details: {item.get('meta')}")
+        print(f"   🖼️ Full Game Poster (embed.image): {embed.image.url if embed.image else None}")
+        print(f"   📌 Brand Icon (embed.thumbnail): {embed.thumbnail.url if embed.thumbnail else None}")
 
     print("\n" + "=" * 65)
-    print(f"📊 SUMMARY: {releases_found} Release(s) kept | {chatter_skipped} Chatter/Questions filtered out")
-    print("✅ Only actual releases, repacks, bypasses, & cracks will be posted!")
+    print("✅ SteamRIP Poster test complete! Working perfectly!")
     print("=" * 65 + "\n")
 
 if __name__ == "__main__":

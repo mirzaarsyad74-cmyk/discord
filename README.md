@@ -1,26 +1,31 @@
-# 🤖 CS.RIN.RU Discord Auto-Poster Bot
+# 🎮 Game Release & SteamRIP Discord Auto-Poster Bot
 
-An automated Discord bot that monitors threads on **CS.RIN.RU** (specifically configured for [SHINOBI: Art of Vengeance](https://cs.rin.ru/forum/viewtopic.php?f=10&t=146233&start=60)) and automatically posts new replies, OP updates, and topic status changes into your Discord channel.
+An automated Discord bot that monitors newly published pre-installed Steam games and updates from **[SteamRIP](https://steamrip.com/)**, along with **FitGirl Repacks**, **DODI Repacks**, **Reddit r/CrackWatch**, and **Steam Client Versions**, automatically posting new releases into your Discord channel.
+
+*(Note: CS.RIN.RU has been removed from active monitoring as requested).*
 
 ---
 
 ## ✨ Features
 
-- **Automated Anti-Bot Challenge Handling**: Seamlessly bypasses CS.RIN.RU's lightweight JavaScript security token challenge without needing headless browsers.
-- **New Reply Alerts**: Posts any new comment, release, repack, bypass, or save file with author, time, direct link, and formatted content.
-- **Crack / Status Change Alerts**: Automatically triggers an alert if the topic title changes (e.g., from `[NOT CRACKED / HV PLAYABLE]` to `[CRACKED]`).
-- **Main Post (OP) Edit Tracking**: Detects when the first post (OP) is edited with updated links or patch notes.
-- **Clean Discord Embeds**:
-  - Quote blocks converted to Discord `> quote` formatting
-  - Code blocks preserved
-  - Forum links resolved and hyperlinked
-  - Attached screenshots and repack images displayed in the embed
-  - Automatic character-length safety truncation with direct read links
+- **👑 SteamRIP Monitoring (`https://steamrip.com/`)**:
+  - Automatically scrapes newly added game releases from the SteamRIP homepage and game patches from the updated games directory.
+  - Seamlessly bypasses Cloudflare bot protection using high-performance TLS/HTTP browser impersonation (`curl_cffi`).
+  - Extracts full game titles, version/build numbers, release year, file size, game categories, and official download links.
+  - Embeds clean game cover artwork and thumbnails.
+- **🎀 Repack & Scene Crack Monitors**:
+  - **FitGirl Repacks**: Official RSS feed monitor with signature Deep Pink/Magenta embeds.
+  - **DODI Repacks**: Official RSS feed monitor with signature Emerald Green embeds.
+  - **Reddit r/CrackWatch**: Monitored for scene cracks, P2P releases, and Denuvo crack/bypass announcements.
+- **⚡ Steam Client Version Watch**:
+  - Tracks Valve's `OpenSteam001/steam-monitor` protobuf branches for Stable and Beta client builds.
+- **🕒 Localized Time Formatting**: All release timestamps are automatically parsed and converted to Kuala Lumpur Time (`GMT+8`).
+- **Clean Discord Embeds**: Distinct color-coded embeds with direct download links, build details, and metadata.
 - **Dual Running Modes**:
-  - **Webhook Mode (Easiest)**: No bot registration or permissions required. Just paste your Discord Webhook URL.
-  - **Bot Mode (Interactive)**: Connects as a bot with prefix and slash commands (`!status`, `!check`, `!latest`).
-- **Persistent State**: Stores seen post IDs and last topic state in `data/state.json` to prevent duplicates across restarts.
-- **Login Cookie Support (Optional)**: Provide your CS.RIN.RU `phpbb3_...` session cookie to reveal hidden download links (`[[Please login to see this link.]]`).
+  - **Webhook Mode (Easiest)**: No bot registration needed. Just paste your Discord Webhook URL.
+  - **Bot Mode (Interactive)**: Connects as a bot with commands (`!status`, `!check`, `!list`).
+- **Persistent State**: Stores seen post IDs and release signatures in `data/state.json` to prevent duplicates across restarts.
+
 
 ---
 
@@ -103,39 +108,41 @@ You can run this bot completely free in the cloud on GitHub Actions—**no serve
 
 ## ⚙️ Configuration (`config.json`)
 
-You can customize topics and polling behavior in `config.json`:
+You can customize enabled monitors and polling behavior in `config.json`:
 
 ```json
 {
-  "topics": [
-    "https://cs.rin.ru/forum/viewtopic.php?f=10&t=146233&start=60",
-    "https://cs.rin.ru/forum/viewtopic.php?t=123456"
-  ],
-  "subforums": [
-    "https://cs.rin.ru/forum/viewforum.php?f=10"
-  ],
-  "check_interval_seconds": 120,
-  "alert_on_title_change": true,
-  "alert_on_op_update": true,
-  "send_latest_post_on_startup": false,
-  "csrin_cookie": ""
+  "watch_steamrip": true,
+  "watch_steam_versions": true,
+  "watch_fitgirl": true,
+  "watch_dodi": true,
+  "watch_crackwatch_reddit": true,
+  "watch_csrin": false,
+  "enable_global_feed": false,
+  "subforum_feeds": [],
+  "topics": [],
+  "subforums": [],
+  "check_interval_seconds": 120
 }
 ```
 
-- **`topics`**: List of any game topic URLs or IDs you want to monitor (add as many games as you want!).
-- **`subforums`**: (Optional) List of forum sections (e.g. `f=10` Main Forum). Alerts whenever someone creates a *brand new game thread*!
+- **`watch_steamrip`**: Enable/disable SteamRIP release & update monitoring (`true` by default).
+- **`watch_fitgirl`**: Enable/disable FitGirl Repacks monitor.
+- **`watch_dodi`**: Enable/disable DODI Repacks monitor.
+- **`watch_crackwatch_reddit`**: Enable/disable Reddit r/CrackWatch monitor.
+- **`watch_steam_versions`**: Enable/disable Steam Client version monitoring.
+- **`watch_csrin`**: Disabled (`false`). (CS.RIN.RU monitoring removed).
 - **`check_interval_seconds`**: Polling frequency in seconds (default: `120` = 2 minutes).
-- **`alert_on_title_change`**: Notifies Discord if any monitored topic title changes (crack status updates).
-- **`alert_on_op_update`**: Notifies Discord if the first post of a game thread is modified.
 
 ---
 
 ## 🧪 Testing
 
-To test the forum scraper and embed generator locally without needing live Discord credentials, run:
+To test the SteamRIP scraper and embed generator locally without needing live Discord credentials, run:
 
 ```powershell
 .\.venv\Scripts\python.exe test_run.py
 ```
 
-This verifies the connection to CS.RIN.RU, handles the security challenge, extracts the Shinobi Art of Vengeance thread, and prints mock Discord embeds to your terminal.
+This verifies the connection to SteamRIP, bypasses Cloudflare, extracts the latest releases and updates, and prints mock Discord embeds to your terminal.
+

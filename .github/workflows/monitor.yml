@@ -1,4 +1,4 @@
-name: CS.RIN.RU Release Notifier
+name: Game Release Notifier
 
 on:
   schedule:

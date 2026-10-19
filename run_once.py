@@ -25,7 +25,8 @@ from steam_client_watcher import create_steam_monitor_embed
 from external_monitors import (
     create_fitgirl_embed,
     create_dodi_embed,
-    create_crackwatch_embed
+    create_crackwatch_embed,
+    create_steamrip_embed
 )
 
 # UTF-8 encoding support
@@ -56,16 +57,19 @@ def load_config() -> dict:
         except Exception as e:
             logger.error(f"Error reading config.json: {e}")
     return {
-        "enable_global_feed": True,
-        "subforum_feeds": ["10"],
+        "watch_steamrip": True,
         "watch_steam_versions": True,
         "watch_fitgirl": True,
         "watch_dodi": True,
         "watch_crackwatch_reddit": True,
+        "watch_csrin": False,
+        "enable_global_feed": False,
+        "subforum_feeds": [],
         "releases_only": True,
-        "topics": ["https://cs.rin.ru/forum/viewtopic.php?f=10&t=146233&start=60"],
+        "topics": [],
         "subforums": []
     }
+
 
 
 def main():
@@ -92,73 +96,75 @@ def main():
 
     logger.info(f"Checking {len(topics)} topic(s)... (Releases Only: {releases_only})")
 
-    # 1. Process Monitored Game Topics
-    for topic_raw in topics:
-        t_id = scraper.extract_topic_id(topic_raw)
-        logger.info(f"Processing topic ID: {t_id}")
+    # 1. Process Monitored Game Topics (CS.RIN.RU)
+    if config.get("watch_csrin", False) and topics:
+        for topic_raw in topics:
+            t_id = scraper.extract_topic_id(topic_raw)
+            logger.info(f"Processing topic ID: {t_id}")
 
-        if t_id not in monitor.state.get("topics", {}):
-            logger.info(f"First-time initialization for topic {t_id}...")
-            monitor.check_topic(t_id, is_first_run_init=True)
-            continue
-
-        events = monitor.check_topic(t_id)
-
-        # Title change
-        if events.title_change and config.get("alert_on_title_change", True):
-            old_t, new_t = events.title_change
-            url = f"{FORUM_URL}/viewtopic.php?t={t_id}"
-            embed = create_title_change_embed(t_id, old_t, new_t, url)
-            safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
-            logger.info(f"Sent title change alert for {t_id}: '{new_t}'")
-
-        # OP update
-        if events.op_update and config.get("alert_on_op_update", True):
-            embed = create_op_update_embed(events.op_update)
-            safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
-            logger.info(f"Sent OP update for {t_id}")
-
-        # New posts in topic
-        for post in events.new_posts:
-            if monitor.is_post_seen(t_id, post):
+            if t_id not in monitor.state.get("topics", {}):
+                logger.info(f"First-time initialization for topic {t_id}...")
+                monitor.check_topic(t_id, is_first_run_init=True)
                 continue
 
-            release_label = None
-            if releases_only:
-                is_rel, release_label = classify_release(post)
-                if not is_rel:
+            events = monitor.check_topic(t_id)
+
+            # Title change
+            if events.title_change and config.get("alert_on_title_change", True):
+                old_t, new_t = events.title_change
+                url = f"{FORUM_URL}/viewtopic.php?t={t_id}"
+                embed = create_title_change_embed(t_id, old_t, new_t, url)
+                safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
+                logger.info(f"Sent title change alert for {t_id}: '{new_t}'")
+
+            # OP update
+            if events.op_update and config.get("alert_on_op_update", True):
+                embed = create_op_update_embed(events.op_update)
+                safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
+                logger.info(f"Sent OP update for {t_id}")
+
+            # New posts in topic
+            for post in events.new_posts:
+                if monitor.is_post_seen(t_id, post):
+                    continue
+
+                release_label = None
+                if releases_only:
+                    is_rel, release_label = classify_release(post)
+                    if not is_rel:
+                        monitor.mark_post_seen(t_id, post)
+                        continue
+
+                # Release signature deduplication
+                meta = extract_metadata(post.clean_markdown, post.topic_title)
+                rel_name = meta.get("release_name")
+                if rel_name and monitor.is_release_duplicate(t_id, rel_name):
+                    logger.info(f"Skipping duplicate release signature: {rel_name}")
                     monitor.mark_post_seen(t_id, post)
                     continue
 
-            # Release signature deduplication
-            meta = extract_metadata(post.clean_markdown, post.topic_title)
-            rel_name = meta.get("release_name")
-            if rel_name and monitor.is_release_duplicate(t_id, rel_name):
-                logger.info(f"Skipping duplicate release signature: {rel_name}")
+                embed = create_post_embed(post, release_label=release_label)
+                safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
+                logger.info(f"Posted {release_label or 'post'} #{post.post_id} by {post.author}")
                 monitor.mark_post_seen(t_id, post)
+                if rel_name:
+                    monitor.mark_release_seen(t_id, rel_name)
+
+    # 2. Process Subforums (CS.RIN.RU)
+    if config.get("watch_csrin", False) and subforums:
+        for f_raw in subforums:
+            f_id = scraper.extract_forum_id(f_raw)
+            if f_id not in monitor.state.get("subforums", {}):
+                monitor.check_subforum(f_id, is_first_run_init=True)
                 continue
 
-            embed = create_post_embed(post, release_label=release_label)
-            safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
-            logger.info(f"Posted {release_label or 'post'} #{post.post_id} by {post.author}")
-            monitor.mark_post_seen(t_id, post)
-            if rel_name:
-                monitor.mark_release_seen(t_id, rel_name)
+            new_threads = monitor.check_subforum(f_id)
+            for th in new_threads:
+                embed = create_new_thread_embed(th, f_id)
+                safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
 
-    # 2. Process Subforums
-    for f_raw in subforums:
-        f_id = scraper.extract_forum_id(f_raw)
-        if f_id not in monitor.state.get("subforums", {}):
-            monitor.check_subforum(f_id, is_first_run_init=True)
-            continue
-
-        new_threads = monitor.check_subforum(f_id)
-        for th in new_threads:
-            embed = create_new_thread_embed(th, f_id)
-            safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
-
-    # 3. Global Live Feeds (Main Forum f=10 and any configured sections)
-    if config.get("enable_global_feed", True):
+    # 3. Global Live Feeds (CS.RIN.RU)
+    if config.get("watch_csrin", False) and config.get("enable_global_feed", False):
         feed_ids = config.get("subforum_feeds", ["10"])
         for fid in feed_ids:
             logger.info(f"Checking CS.RIN.RU Global Live Feed (f={fid})...")
@@ -179,6 +185,17 @@ def main():
                 logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
                 if rel_name:
                     monitor.mark_release_seen(post.topic_id, rel_name)
+
+    # 4. SteamRIP Watcher (Signature Royal Indigo Color - https://steamrip.com/)
+    if config.get("watch_steamrip", True):
+        logger.info("Checking SteamRIP (https://steamrip.com/)...")
+        sr_updates = monitor.check_steamrip_updates()
+        if sr_updates:
+            for upd in sr_updates:
+                embed = create_steamrip_embed(upd)
+                safe_webhook_send(webhook, embed, username="SteamRIP Monitor")
+                logger.info(f"Posted SteamRIP [{upd.get('type')}]: {upd['title']}")
+
 
     # 4. Steam Client Version Watch (OpenSteam001/steam-monitor protobuf)
     if config.get("watch_steam_versions", True):

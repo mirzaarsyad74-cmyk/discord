@@ -1,9 +1,9 @@
 @echo off
-title CS.RIN.RU Discord Auto-Poster
+title Game Release Discord Auto-Poster
 cd /d "%~dp0"
 
 echo ========================================================
-echo       CS.RIN.RU Discord Auto-Poster Bot
+echo       Game Release Discord Auto-Poster Bot
 echo ========================================================
 echo.
 
@@ -16,7 +16,7 @@ IF NOT EXIST ".venv\Scripts\python.exe" (
     echo.
 )
 
-echo Starting CS.RIN.RU Discord Monitor...
+echo Starting Discord Monitor (SteamRIP, FitGirl, DODI, CrackWatch)...
 echo.
 .\.venv\Scripts\python.exe main.py
 

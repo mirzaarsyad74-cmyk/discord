@@ -16,7 +16,8 @@ from discord_poster import (
     create_post_embed,
     create_title_change_embed,
     create_op_update_embed,
-    create_new_thread_embed
+    create_new_thread_embed,
+    safe_webhook_send
 )
 
 # Set up UTF-8 for Windows console
@@ -33,7 +34,7 @@ logging.basicConfig(
     format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
-logger = logging.getLogger("cs_rin_bot")
+logger = logging.getLogger("release_monitor_bot")
 
 # Load environment & config
 load_dotenv()
@@ -48,8 +49,17 @@ def load_config() -> dict:
         except Exception as e:
             logger.error(f"Error reading config.json: {e}")
     return {
-        "topics": ["https://cs.rin.ru/forum/viewtopic.php?f=10&t=146233&start=60"],
+        "watch_steamrip": True,
+        "watch_steam_versions": True,
+        "watch_fitgirl": True,
+        "watch_dodi": True,
+        "watch_crackwatch_reddit": True,
+        "watch_csrin": False,
+        "enable_global_feed": False,
+        "subforum_feeds": [],
+        "topics": [],
         "subforums": [],
+        "releases_only": True,
         "check_interval_seconds": 120,
         "alert_on_title_change": True,
         "alert_on_op_update": True,
@@ -166,39 +176,49 @@ async def bot_monitor_task():
         logger.warning(f"Could not find Discord channel ID: {DISCORD_CHANNEL_ID}")
         return
 
-    # Check monitored game topics
-    topics = config.get("topics", [])
-    for topic_raw in topics:
-        t_id = scraper.extract_topic_id(topic_raw)
+    # Check SteamRIP (https://steamrip.com/ - Pre-installed Steam Games)
+    if config.get("watch_steamrip", True):
         try:
-            events = monitor.check_topic(t_id)
-            await send_updates_to_target(channel, events, is_webhook=False)
+            from external_monitors import create_steamrip_embed
+            for upd in monitor.check_steamrip_updates():
+                await channel.send(embed=create_steamrip_embed(upd))
         except Exception as e:
-            logger.error(f"Error checking topic {t_id}: {e}")
+            logger.error(f"Error checking SteamRIP feed: {e}")
 
-    # Check monitored subforums (if any)
-    subforums = config.get("subforums", [])
-    for f_raw in subforums:
-        f_id = scraper.extract_forum_id(f_raw)
-        try:
-            new_threads = monitor.check_subforum(f_id)
-            for th in new_threads:
-                await send_new_thread_to_target(channel, th, f_id, is_webhook=False)
-        except Exception as e:
-            logger.error(f"Error checking subforum {f_id}: {e}")
+    # Check monitored game topics (CS.RIN.RU)
+    if config.get("watch_csrin", False):
+        topics = config.get("topics", [])
+        for topic_raw in topics:
+            t_id = scraper.extract_topic_id(topic_raw)
+            try:
+                events = monitor.check_topic(t_id)
+                await send_updates_to_target(channel, events, is_webhook=False)
+            except Exception as e:
+                logger.error(f"Error checking topic {t_id}: {e}")
 
-    # Check Global Live Feed (all new games & Steam updates)
-    if config.get("enable_global_feed", True):
-        try:
-            feed_posts = monitor.check_live_feed(forum_id="10")
-            for post in feed_posts:
-                is_rel, release_label = classify_release(post)
-                if not is_rel:
-                    continue
-                embed = create_post_embed(post, release_label=release_label)
-                await channel.send(embed=embed)
-        except Exception as e:
-            logger.error(f"Error checking global live feed: {e}")
+        # Check monitored subforums (if any)
+        subforums = config.get("subforums", [])
+        for f_raw in subforums:
+            f_id = scraper.extract_forum_id(f_raw)
+            try:
+                new_threads = monitor.check_subforum(f_id)
+                for th in new_threads:
+                    await send_new_thread_to_target(channel, th, f_id, is_webhook=False)
+            except Exception as e:
+                logger.error(f"Error checking subforum {f_id}: {e}")
+
+        # Check Global Live Feed (all new games & Steam updates)
+        if config.get("enable_global_feed", False):
+            try:
+                feed_posts = monitor.check_live_feed(forum_id="10")
+                for post in feed_posts:
+                    is_rel, release_label = classify_release(post)
+                    if not is_rel:
+                        continue
+                    embed = create_post_embed(post, release_label=release_label)
+                    await channel.send(embed=embed)
+            except Exception as e:
+                logger.error(f"Error checking global live feed: {e}")
 
     # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
     if config.get("watch_steam_versions", True):
@@ -247,9 +267,22 @@ async def bot_monitor_task():
 
 @bot.event
 async def on_ready():
-    topics = config.get("topics", [])
+    active_monitors = []
+    if config.get("watch_steamrip", True):
+        active_monitors.append("SteamRIP")
+    if config.get("watch_fitgirl", True):
+        active_monitors.append("FitGirl")
+    if config.get("watch_dodi", True):
+        active_monitors.append("DODI")
+    if config.get("watch_crackwatch_reddit", True):
+        active_monitors.append("r/CrackWatch")
+    if config.get("watch_steam_versions", True):
+        active_monitors.append("Steam Client")
+    if config.get("watch_csrin", False):
+        active_monitors.append(f"CS.RIN.RU ({len(config.get('topics', []))} topics)")
+
     logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    logger.info(f"Actively monitoring {len(topics)} game topic(s) every {CHECK_INTERVAL}s.")
+    logger.info(f"Actively monitoring: {', '.join(active_monitors)} every {CHECK_INTERVAL}s.")
     
     try:
         synced = await bot.tree.sync()
@@ -264,17 +297,43 @@ async def on_ready():
 # Bot Commands
 @bot.command(name="check")
 async def cmd_check(ctx: commands.Context):
-    """Forces an immediate check of all monitored topics."""
-    msg = await ctx.send("🔍 Checking CS.RIN.RU for new posts...")
+    """Forces an immediate check of all active monitors."""
+    msg = await ctx.send("🔍 Checking monitors for new game releases & updates...")
     total_new = 0
-    topics = config.get("topics", [])
-    for topic_raw in topics:
-        t_id = scraper.extract_topic_id(topic_raw)
-        events = monitor.check_topic(t_id)
-        total_new += len(events.new_posts)
-        await send_updates_to_target(ctx.channel, events, is_webhook=False)
-    
-    await msg.edit(content=f"✅ Check complete! Found {total_new} new post(s) across {len(topics)} topic(s).")
+
+    if config.get("watch_steamrip", True):
+        from external_monitors import create_steamrip_embed
+        for upd in monitor.check_steamrip_updates():
+            total_new += 1
+            await ctx.send(embed=create_steamrip_embed(upd))
+
+    if config.get("watch_fitgirl", True):
+        from external_monitors import create_fitgirl_embed
+        for upd in monitor.check_fitgirl_updates():
+            total_new += 1
+            await ctx.send(embed=create_fitgirl_embed(upd))
+
+    if config.get("watch_dodi", True):
+        from external_monitors import create_dodi_embed
+        for upd in monitor.check_dodi_updates():
+            total_new += 1
+            await ctx.send(embed=create_dodi_embed(upd))
+
+    if config.get("watch_crackwatch_reddit", True):
+        from external_monitors import create_crackwatch_embed
+        for upd in monitor.check_crackwatch_updates():
+            total_new += 1
+            await ctx.send(embed=create_crackwatch_embed(upd))
+
+    if config.get("watch_csrin", False):
+        topics = config.get("topics", [])
+        for topic_raw in topics:
+            t_id = scraper.extract_topic_id(topic_raw)
+            events = monitor.check_topic(t_id)
+            total_new += len(events.new_posts)
+            await send_updates_to_target(ctx.channel, events, is_webhook=False)
+
+    await msg.edit(content=f"✅ Check complete! Found {total_new} new update(s) across active monitors.")
 
 
 @bot.command(name="add")
@@ -357,16 +416,17 @@ async def cmd_list(ctx: commands.Context):
 @bot.command(name="status")
 async def cmd_status(ctx: commands.Context):
     """Displays monitor status and active settings."""
-    topics = config.get("topics", [])
-    releases_only = config.get("releases_only", True)
     embed = discord.Embed(
-        title="🤖 CS.RIN.RU Auto-Poster Status",
-        color=0x3498DB
+        title="🤖 Game Release Monitor Status",
+        color=0x6C5CE7
     )
-    embed.add_field(name="Monitored Games", value=f"`{len(topics)}` topics active", inline=True)
+    embed.add_field(name="SteamRIP Monitor", value="**✅ ACTIVE (steamrip.com)**" if config.get("watch_steamrip", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="FitGirl Repacks", value="**✅ ACTIVE**" if config.get("watch_fitgirl", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="DODI Repacks", value="**✅ ACTIVE**" if config.get("watch_dodi", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="r/CrackWatch", value="**✅ ACTIVE**" if config.get("watch_crackwatch_reddit", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Steam Client Watch", value="**✅ ACTIVE**" if config.get("watch_steam_versions", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="CS.RIN.RU", value="❌ **REMOVED**" if not config.get("watch_csrin", False) else f"✅ Active ({len(config.get('topics', []))} topics)", inline=True)
     embed.add_field(name="Check Interval", value=f"`{CHECK_INTERVAL}` seconds", inline=True)
-    embed.add_field(name="Releases Only (No Chat)", value=f"**{'✅ YES' if releases_only else '❌ NO'}**", inline=True)
-    embed.add_field(name="Crack / Title Alerts", value=str(config.get("alert_on_title_change", True)), inline=True)
     embed.set_footer(text=f"Serving channel: #{ctx.channel.name}")
     await ctx.send(embed=embed)
 
@@ -456,30 +516,38 @@ async def run_webhook_daemon(webhook_url: str):
             active_topics = current_cfg.get("topics", [])
             active_subforums = current_cfg.get("subforums", [])
 
-            for topic_raw in active_topics:
-                t_id = scraper.extract_topic_id(topic_raw)
-                logger.info(f"Checking CS.RIN.RU topic {t_id}...")
-                events = monitor.check_topic(t_id)
-                await send_updates_to_target(webhook, events, is_webhook=True)
+            # Check SteamRIP (https://steamrip.com/ - Pre-installed Steam Games)
+            if current_cfg.get("watch_steamrip", True):
+                from external_monitors import create_steamrip_embed
+                for upd in monitor.check_steamrip_updates():
+                    safe_webhook_send(webhook, create_steamrip_embed(upd), username="SteamRIP Monitor")
+                    logger.info(f"Posted SteamRIP release: {upd['title']}")
 
-            for f_raw in active_subforums:
-                f_id = scraper.extract_forum_id(f_raw)
-                logger.info(f"Checking subforum {f_id} for new threads...")
-                new_threads = monitor.check_subforum(f_id)
-                for th in new_threads:
-                    await send_new_thread_to_target(webhook, th, f_id, is_webhook=True)
+            if current_cfg.get("watch_csrin", False):
+                for topic_raw in active_topics:
+                    t_id = scraper.extract_topic_id(topic_raw)
+                    logger.info(f"Checking CS.RIN.RU topic {t_id}...")
+                    events = monitor.check_topic(t_id)
+                    await send_updates_to_target(webhook, events, is_webhook=True)
 
-            # Check Global Live Feed (all new games & Steam updates)
-            if current_cfg.get("enable_global_feed", True):
-                logger.info("Checking CS.RIN.RU Global Live Feed (f=10 Main Forum)...")
-                feed_posts = monitor.check_live_feed(forum_id="10")
-                for post in feed_posts:
-                    is_rel, release_label = classify_release(post)
-                    if not is_rel:
-                        continue
-                    embed = create_post_embed(post, release_label=release_label)
-                    webhook.send(embed=embed, username="CS.RIN.RU Monitor")
-                    logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
+                for f_raw in active_subforums:
+                    f_id = scraper.extract_forum_id(f_raw)
+                    logger.info(f"Checking subforum {f_id} for new threads...")
+                    new_threads = monitor.check_subforum(f_id)
+                    for th in new_threads:
+                        await send_new_thread_to_target(webhook, th, f_id, is_webhook=True)
+
+                # Check Global Live Feed (all new games & Steam updates)
+                if current_cfg.get("enable_global_feed", False):
+                    logger.info("Checking CS.RIN.RU Global Live Feed (f=10 Main Forum)...")
+                    feed_posts = monitor.check_live_feed(forum_id="10")
+                    for post in feed_posts:
+                        is_rel, release_label = classify_release(post)
+                        if not is_rel:
+                            continue
+                        embed = create_post_embed(post, release_label=release_label)
+                        webhook.send(embed=embed, username="CS.RIN.RU Monitor")
+                        logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
 
             # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
             if current_cfg.get("watch_steam_versions", True):

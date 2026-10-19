@@ -1,17 +1,15 @@
 {
-  "enable_global_feed": true,
-  "subforum_feeds": [
-    "10"
-  ],
+  "watch_steamrip": true,
   "watch_steam_versions": true,
   "watch_fitgirl": true,
   "watch_dodi": true,
   "watch_crackwatch_reddit": true,
-  "releases_only": true,
-  "topics": [
-    "https://cs.rin.ru/forum/viewtopic.php?f=10&t=146233&start=60"
-  ],
+  "watch_csrin": false,
+  "enable_global_feed": false,
+  "subforum_feeds": [],
+  "topics": [],
   "subforums": [],
+  "releases_only": true,
   "check_interval_seconds": 120,
   "alert_on_title_change": true,
   "alert_on_op_update": true,
