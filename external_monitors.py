@@ -623,51 +623,103 @@ def create_steamrip_embed(item: Dict[str, Any]):
     return embed
 
 
+_last_working_proxy: Optional[str] = None
+_cached_proxies: List[str] = []
+_proxies_fetched_at: float = 0.0
+
+
 def fetch_suo_catalog(limit: int = 150, timeout: int = 4) -> List[Dict[str, Any]]:
     """
     Fetches the newest games from SUO Wannabe using streaming chunk reading
     to avoid downloading the massive 10.6MB full archive.
-    Includes automatic fallback to direct IP if DNS resolution fails.
+    Tries direct connections first; if blocked by cloud datacenter firewalls,
+    automatically routes through a fast relay proxy to bypass the block completely.
     """
+    global _last_working_proxy, _cached_proxies, _proxies_fetched_at
     import json
+    import time
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+    target_bytes = limit * 450  # ~300-350 bytes per game JSON object
+
+    def parse_stream_response(response) -> Optional[List[Dict[str, Any]]]:
+        try:
+            chunks = []
+            total_read = 0
+            for chunk in response.iter_content(chunk_size=4096, decode_unicode=True):
+                if chunk:
+                    chunks.append(chunk)
+                    total_read += len(chunk)
+                    if total_read >= target_bytes:
+                        break
+            raw_text = "".join(chunks).strip()
+            if not raw_text.startswith("["):
+                return None
+            last_brace = raw_text.rfind("}")
+            if last_brace == -1:
+                return None
+            valid_json_text = raw_text[:last_brace + 1] + "]"
+            parsed = json.loads(valid_json_text)
+            if isinstance(parsed, list) and len(parsed) > 0:
+                return parsed
+        except Exception:
+            return None
+        return None
+
+    # 1. Try Direct endpoints first
     endpoints = [
         (SUO_API_URL, {"User-Agent": STANDARD_HEADERS["User-Agent"], "Accept": "application/json"}, True),
         (SUO_DIRECT_IP_URL, {"Host": "steamunlockonennabe.duckdns.org", "User-Agent": STANDARD_HEADERS["User-Agent"], "Accept": "application/json"}, False)
     ]
 
-    target_bytes = limit * 450  # ~300-350 bytes per game JSON object
-
     for url, headers, verify_ssl in endpoints:
         try:
-            chunks = []
-            total_read = 0
             with requests.get(url, headers=headers, stream=True, verify=verify_ssl, timeout=timeout) as r:
-                if r.status_code != 200:
-                    continue
-                for chunk in r.iter_content(chunk_size=4096, decode_unicode=True):
-                    if chunk:
-                        chunks.append(chunk)
-                        total_read += len(chunk)
-                        if total_read >= target_bytes:
-                            break
+                if r.status_code == 200:
+                    data = parse_stream_response(r)
+                    if data:
+                        return data
+        except Exception:
+            continue
 
-            raw_text = "".join(chunks).strip()
-            if not raw_text.startswith("["):
-                continue
+    # 2. Try Last Known Working Relay Proxy (instant bypass without re-fetching list)
+    if _last_working_proxy:
+        try:
+            p_dict = {"http": f"http://{_last_working_proxy}", "https": f"http://{_last_working_proxy}"}
+            with requests.get(SUO_API_URL, headers=STANDARD_HEADERS, proxies=p_dict, stream=True, timeout=5) as r:
+                if r.status_code == 200:
+                    data = parse_stream_response(r)
+                    if data:
+                        return data
+        except Exception:
+            _last_working_proxy = None
 
-            last_brace = raw_text.rfind("}")
-            if last_brace == -1:
-                continue
+    # 3. Fetch fresh elite proxies and find an active relay to bypass datacenter firewall
+    now = time.time()
+    if now - _proxies_fetched_at > 300 or not _cached_proxies:
+        try:
+            p_res = requests.get(
+                "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=2500&country=all&ssl=yes&anonymity=elite",
+                timeout=4
+            )
+            if p_res.status_code == 200:
+                _cached_proxies = [p.strip() for p in p_res.text.splitlines() if p.strip()]
+                _proxies_fetched_at = now
+        except Exception:
+            pass
 
-            valid_json_text = raw_text[:last_brace + 1] + "]"
-            data = json.loads(valid_json_text)
-            if isinstance(data, list) and len(data) > 0:
-                return data
-        except Exception as e:
-            logger.debug(f"SUO endpoint {url} attempt failed: {e}")
+    for candidate in _cached_proxies[:8]:
+        try:
+            p_dict = {"http": f"http://{candidate}", "https": f"http://{candidate}"}
+            with requests.get(SUO_API_URL, headers=STANDARD_HEADERS, proxies=p_dict, stream=True, timeout=4) as r:
+                if r.status_code == 200:
+                    data = parse_stream_response(r)
+                    if data:
+                        _last_working_proxy = candidate
+                        logger.info(f"Bypassed SUO firewall block via relay proxy ({candidate})")
+                        return data
+        except Exception:
             continue
 
     logger.debug("SUO Wannabe endpoints unreachable")
@@ -678,36 +730,14 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
     """
     Checks for newly published games on SteamUnlock Wannabe (https://steamunlockonennabe.click/).
     Uses streaming chunk extraction to get the latest additions in fractions of a second.
-    Includes an automatic 15-minute cooldown on connection failure to allow firewall bans to expire.
     """
-    import time
     suo_state = state.setdefault("suo", {})
     seen_appids = set(suo_state.setdefault("seen_appids", []))
-
-    now = time.time()
-    cooldown_until = suo_state.get("cooldown_until", 0)
-    if now < cooldown_until:
-        rem_min = max(1, int((cooldown_until - now) / 60))
-        logger.debug(f"SUO Wannabe in cooldown ({rem_min}m remaining to allow firewall cooldown)...")
-        return []
 
     req_limit = 250 if not seen_appids else 80
     data = fetch_suo_catalog(limit=req_limit, timeout=4)
     if not data:
-        # Failed to reach SUO Wannabe API: enter backoff cooldown to allow GCP/firewall block to expire
-        fail_count = suo_state.get("fail_count", 0) + 1
-        suo_state["fail_count"] = fail_count
-        backoff_sec = 900 if fail_count <= 2 else 1800  # 15 mins (first 2 fails), then 30 mins
-        suo_state["cooldown_until"] = now + backoff_sec
-        logger.warning(
-            f"Notice: Could not reach SUO Wannabe API (cloud datacenter filtered or DNS blocked). "
-            f"Entering backoff cooldown for {backoff_sec // 60} minutes to allow firewall ban to expire."
-        )
         return []
-
-    # Successful fetch! Reset cooldown and fail count
-    suo_state.pop("cooldown_until", None)
-    suo_state["fail_count"] = 0
 
     # First run initialization: record top catalog items to prevent spam
     if not seen_appids:

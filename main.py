@@ -607,15 +607,12 @@ async def run_webhook_daemon(webhook_url: str):
 
             # Check SteamUnlock Wannabe (https://steamunlockonennabe.click/)
             if current_cfg.get("watch_steamunlockonennabe", True):
-                import time
-                suo_cd = monitor.state.get("suo", {}).get("cooldown_until", 0)
-                if time.time() >= suo_cd:
-                    from external_monitors import create_suo_embed
-                    logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
-                    updates = await asyncio.to_thread(monitor.check_suo_updates)
-                    for upd in updates:
-                        safe_webhook_send(webhook, create_suo_embed(upd), username="SUO Wannabe Monitor")
-                        logger.info(f"Posted SUO Wannabe release: {upd['title']}")
+                from external_monitors import create_suo_embed
+                logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
+                updates = await asyncio.to_thread(monitor.check_suo_updates)
+                for upd in updates:
+                    safe_webhook_send(webhook, create_suo_embed(upd), username="SUO Wannabe Monitor")
+                    logger.info(f"Posted SUO Wannabe release: {upd['title']}")
 
             # Check Steam Deals & Promotions (Prices in MYR/RM)
             if current_cfg.get("watch_steam_deals", True):
