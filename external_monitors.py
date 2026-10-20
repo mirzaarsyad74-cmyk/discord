@@ -623,7 +623,7 @@ def create_steamrip_embed(item: Dict[str, Any]):
     return embed
 
 
-def fetch_suo_catalog(limit: int = 150, timeout: int = 6) -> List[Dict[str, Any]]:
+def fetch_suo_catalog(limit: int = 150, timeout: int = 4) -> List[Dict[str, Any]]:
     """
     Fetches the newest games from SUO Wannabe using streaming chunk reading
     to avoid downloading the massive 10.6MB full archive.
@@ -670,7 +670,7 @@ def fetch_suo_catalog(limit: int = 150, timeout: int = 6) -> List[Dict[str, Any]
             logger.debug(f"SUO endpoint {url} attempt failed: {e}")
             continue
 
-    logger.warning("Notice: Could not reach SUO Wannabe API (cloud datacenter filtered or DNS blocked)")
+    logger.debug("SUO Wannabe endpoints unreachable")
     return []
 
 
@@ -678,14 +678,36 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
     """
     Checks for newly published games on SteamUnlock Wannabe (https://steamunlockonennabe.click/).
     Uses streaming chunk extraction to get the latest additions in fractions of a second.
+    Includes an automatic 15-minute cooldown on connection failure to allow firewall bans to expire.
     """
+    import time
     suo_state = state.setdefault("suo", {})
     seen_appids = set(suo_state.setdefault("seen_appids", []))
 
-    req_limit = 250 if not seen_appids else 80
-    data = fetch_suo_catalog(limit=req_limit, timeout=6)
-    if not data:
+    now = time.time()
+    cooldown_until = suo_state.get("cooldown_until", 0)
+    if now < cooldown_until:
+        rem_min = max(1, int((cooldown_until - now) / 60))
+        logger.debug(f"SUO Wannabe in cooldown ({rem_min}m remaining to allow firewall cooldown)...")
         return []
+
+    req_limit = 250 if not seen_appids else 80
+    data = fetch_suo_catalog(limit=req_limit, timeout=4)
+    if not data:
+        # Failed to reach SUO Wannabe API: enter backoff cooldown to allow GCP/firewall block to expire
+        fail_count = suo_state.get("fail_count", 0) + 1
+        suo_state["fail_count"] = fail_count
+        backoff_sec = 900 if fail_count <= 2 else 1800  # 15 mins (first 2 fails), then 30 mins
+        suo_state["cooldown_until"] = now + backoff_sec
+        logger.warning(
+            f"Notice: Could not reach SUO Wannabe API (cloud datacenter filtered or DNS blocked). "
+            f"Entering backoff cooldown for {backoff_sec // 60} minutes to allow firewall ban to expire."
+        )
+        return []
+
+    # Successful fetch! Reset cooldown and fail count
+    suo_state.pop("cooldown_until", None)
+    suo_state["fail_count"] = 0
 
     # First run initialization: record top catalog items to prevent spam
     if not seen_appids:

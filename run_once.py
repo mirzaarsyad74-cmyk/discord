@@ -202,13 +202,16 @@ def main():
 
     # 5. SteamUnlock Wannabe Watcher (https://steamunlockonennabe.click/)
     if config.get("watch_steamunlockonennabe", True):
-        logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
-        suo_updates = monitor.check_suo_updates()
-        if suo_updates:
-            for upd in suo_updates:
-                embed = create_suo_embed(upd)
-                safe_webhook_send(webhook, embed, username="SUO Wannabe Monitor")
-                logger.info(f"Posted SUO Wannabe release: {upd['title']}")
+        import time
+        suo_cd = monitor.state.get("suo", {}).get("cooldown_until", 0)
+        if time.time() >= suo_cd:
+            logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
+            suo_updates = monitor.check_suo_updates()
+            if suo_updates:
+                for upd in suo_updates:
+                    embed = create_suo_embed(upd)
+                    safe_webhook_send(webhook, embed, username="SUO Wannabe Monitor")
+                    logger.info(f"Posted SUO Wannabe release: {upd['title']}")
 
     # 6. Steam Deals & Promotions (Prices in MYR / RM)
     if config.get("watch_steam_deals", True):
