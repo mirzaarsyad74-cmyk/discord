@@ -49,11 +49,12 @@ def load_config() -> dict:
         except Exception as e:
             logger.error(f"Error reading config.json: {e}")
     return {
-        "watch_steamrip": True,
+        "watch_steamrip": False,
         "watch_steamunlockonennabe": True,
+        "watch_steam_deals": True,
         "watch_steam_versions": True,
-        "watch_fitgirl": True,
-        "watch_dodi": True,
+        "watch_fitgirl": False,
+        "watch_dodi": False,
         "watch_crackwatch_reddit": True,
         "watch_csrin": False,
         "enable_global_feed": False,
@@ -219,6 +220,17 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking SUO Wannabe feed: {e}")
 
+    # Check Steam Deals & Promotions (Prices in MYR/RM)
+    if config.get("watch_steam_deals", True):
+        try:
+            from external_monitors import create_steam_deal_embed
+            logger.info("Checking Steam Specials & Promotions (MYR/RM)...")
+            updates = await asyncio.to_thread(monitor.check_steam_deals)
+            for upd in updates:
+                await channel.send(embed=create_steam_deal_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking Steam deals: {e}")
+
     # Check monitored game topics (CS.RIN.RU)
     if config.get("watch_csrin", False):
         topics = config.get("topics", [])
@@ -308,13 +320,15 @@ async def bot_monitor_task():
 @bot.event
 async def on_ready():
     active_monitors = []
-    if config.get("watch_steamrip", True):
+    if config.get("watch_steamrip", False):
         active_monitors.append("SteamRIP")
     if config.get("watch_steamunlockonennabe", True):
         active_monitors.append("SUO Wannabe")
-    if config.get("watch_fitgirl", True):
+    if config.get("watch_steam_deals", True):
+        active_monitors.append("Steam Deals (MYR)")
+    if config.get("watch_fitgirl", False):
         active_monitors.append("FitGirl")
-    if config.get("watch_dodi", True):
+    if config.get("watch_dodi", False):
         active_monitors.append("DODI")
     if config.get("watch_crackwatch_reddit", True):
         active_monitors.append("r/CrackWatch")
@@ -477,10 +491,11 @@ async def cmd_status(ctx: commands.Context):
         title="🤖 Game Release Monitor Status",
         color=0x6C5CE7
     )
-    embed.add_field(name="SteamRIP Monitor", value="**✅ ACTIVE (steamrip.com)**" if config.get("watch_steamrip", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="SteamRIP Monitor", value="**✅ ACTIVE (steamrip.com)**" if config.get("watch_steamrip", False) else "❌ Disabled", inline=True)
     embed.add_field(name="SUO Wannabe", value="**✅ ACTIVE (steamunlockonennabe.click)**" if config.get("watch_steamunlockonennabe", True) else "❌ Disabled", inline=True)
-    embed.add_field(name="FitGirl Repacks", value="**✅ ACTIVE**" if config.get("watch_fitgirl", True) else "❌ Disabled", inline=True)
-    embed.add_field(name="DODI Repacks", value="**✅ ACTIVE**" if config.get("watch_dodi", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Steam Specials (MYR)", value="**✅ ACTIVE (RM Pricing)**" if config.get("watch_steam_deals", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="FitGirl Repacks", value="**✅ ACTIVE**" if config.get("watch_fitgirl", False) else "❌ Disabled", inline=True)
+    embed.add_field(name="DODI Repacks", value="**✅ ACTIVE**" if config.get("watch_dodi", False) else "❌ Disabled", inline=True)
     embed.add_field(name="r/CrackWatch", value="**✅ ACTIVE**" if config.get("watch_crackwatch_reddit", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Steam Client Watch", value="**✅ ACTIVE**" if config.get("watch_steam_versions", True) else "❌ Disabled", inline=True)
     embed.add_field(name="CS.RIN.RU", value="❌ **REMOVED**" if not config.get("watch_csrin", False) else f"✅ Active ({len(config.get('topics', []))} topics)", inline=True)
@@ -598,6 +613,15 @@ async def run_webhook_daemon(webhook_url: str):
                 for upd in updates:
                     safe_webhook_send(webhook, create_suo_embed(upd), username="SUO Wannabe Monitor")
                     logger.info(f"Posted SUO Wannabe release: {upd['title']}")
+
+            # Check Steam Deals & Promotions (Prices in MYR/RM)
+            if current_cfg.get("watch_steam_deals", True):
+                from external_monitors import create_steam_deal_embed
+                logger.info("Checking Steam Specials & Promotions (MYR/RM)...")
+                updates = await asyncio.to_thread(monitor.check_steam_deals)
+                for upd in updates:
+                    safe_webhook_send(webhook, create_steam_deal_embed(upd), username="Steam Specials")
+                    logger.info(f"Posted Steam Deal: {upd['name']} (-{upd['discount_percent']}%)")
 
             if current_cfg.get("watch_csrin", False):
                 for topic_raw in active_topics:
@@ -757,10 +781,11 @@ def start_health_server():
             self.end_headers()
             active_srcs = [
                 s for s, enabled in [
-                    ("SteamRIP", config.get("watch_steamrip", True)),
+                    ("SteamRIP", config.get("watch_steamrip", False)),
                     ("SUO Wannabe", config.get("watch_steamunlockonennabe", True)),
-                    ("FitGirl", config.get("watch_fitgirl", True)),
-                    ("DODI", config.get("watch_dodi", True)),
+                    ("Steam Deals (MYR)", config.get("watch_steam_deals", True)),
+                    ("FitGirl", config.get("watch_fitgirl", False)),
+                    ("DODI", config.get("watch_dodi", False)),
                     ("r/CrackWatch", config.get("watch_crackwatch_reddit", True)),
                     ("Steam Client", config.get("watch_steam_versions", True)),
                 ] if enabled

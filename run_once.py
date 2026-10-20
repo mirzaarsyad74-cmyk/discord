@@ -26,7 +26,9 @@ from external_monitors import (
     create_fitgirl_embed,
     create_dodi_embed,
     create_crackwatch_embed,
-    create_steamrip_embed
+    create_steamrip_embed,
+    create_suo_embed,
+    create_steam_deal_embed
 )
 
 # UTF-8 encoding support
@@ -57,10 +59,12 @@ def load_config() -> dict:
         except Exception as e:
             logger.error(f"Error reading config.json: {e}")
     return {
-        "watch_steamrip": True,
+        "watch_steamrip": False,
+        "watch_steamunlockonennabe": True,
+        "watch_steam_deals": True,
         "watch_steam_versions": True,
-        "watch_fitgirl": True,
-        "watch_dodi": True,
+        "watch_fitgirl": False,
+        "watch_dodi": False,
         "watch_crackwatch_reddit": True,
         "watch_csrin": False,
         "enable_global_feed": False,
@@ -187,7 +191,7 @@ def main():
                     monitor.mark_release_seen(post.topic_id, rel_name)
 
     # 4. SteamRIP Watcher (Signature Royal Indigo Color - https://steamrip.com/)
-    if config.get("watch_steamrip", True):
+    if config.get("watch_steamrip", False):
         logger.info("Checking SteamRIP (https://steamrip.com/)...")
         sr_updates = monitor.check_steamrip_updates()
         if sr_updates:
@@ -196,8 +200,27 @@ def main():
                 safe_webhook_send(webhook, embed, username="SteamRIP Monitor")
                 logger.info(f"Posted SteamRIP [{upd.get('type')}]: {upd['title']}")
 
+    # 5. SteamUnlock Wannabe Watcher (https://steamunlockonennabe.click/)
+    if config.get("watch_steamunlockonennabe", True):
+        logger.info("Checking SUO Wannabe (https://steamunlockonennabe.click/)...")
+        suo_updates = monitor.check_suo_updates()
+        if suo_updates:
+            for upd in suo_updates:
+                embed = create_suo_embed(upd)
+                safe_webhook_send(webhook, embed, username="SUO Wannabe Monitor")
+                logger.info(f"Posted SUO Wannabe release: {upd['title']}")
 
-    # 4. Steam Client Version Watch (OpenSteam001/steam-monitor protobuf)
+    # 6. Steam Deals & Promotions (Prices in MYR / RM)
+    if config.get("watch_steam_deals", True):
+        logger.info("Checking Steam Specials & Promotions (MYR/RM)...")
+        deal_updates = monitor.check_steam_deals()
+        if deal_updates:
+            for upd in deal_updates:
+                embed = create_steam_deal_embed(upd)
+                safe_webhook_send(webhook, embed, username="Steam Specials")
+                logger.info(f"Posted Steam Deal: {upd['name']} (-{upd['discount_percent']}%)")
+
+    # 7. Steam Client Version Watch (OpenSteam001/steam-monitor protobuf)
     if config.get("watch_steam_versions", True):
         logger.info("Checking OpenSteam001/steam-monitor protobuf branch for Steam Client updates...")
         steam_updates = monitor.check_steam_client_version()
@@ -212,8 +235,8 @@ def main():
                 safe_webhook_send(webhook, embed, username="Steam Client Watch")
                 logger.info(f"Posted Steam Client Version Update: {upd['channel_name']} v{upd['version']}")
 
-    # 5. FitGirl Repacks Watcher (Signature Magenta Color)
-    if config.get("watch_fitgirl", True):
+    # 8. FitGirl Repacks Watcher (Signature Magenta Color)
+    if config.get("watch_fitgirl", False):
         logger.info("Checking FitGirl Repacks official feed...")
         fg_updates = monitor.check_fitgirl_updates()
         if fg_updates:
@@ -222,8 +245,8 @@ def main():
                 safe_webhook_send(webhook, embed, username="FitGirl Repacks")
                 logger.info(f"Posted FitGirl Repack: {upd['title']}")
 
-    # 6. DODI Repacks Watcher (Signature Emerald Green Color)
-    if config.get("watch_dodi", True):
+    # 9. DODI Repacks Watcher (Signature Emerald Green Color)
+    if config.get("watch_dodi", False):
         logger.info("Checking DODI Repacks official feed...")
         dodi_updates = monitor.check_dodi_updates()
         if dodi_updates:

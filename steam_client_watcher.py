@@ -14,6 +14,7 @@ STEAM_MONITOR_RAW_README = "https://raw.githubusercontent.com/OpenSteam001/steam
 STEAM_MONITOR_COMMITS_ATOM = "https://github.com/OpenSteam001/steam-monitor/commits/protobuf.atom"
 STEAM_MONITOR_REPO_URL = "https://github.com/OpenSteam001/steam-monitor/tree/protobuf"
 STEAM_LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Steam_icon_logo.svg/512px-Steam_icon_logo.svg.png"
+STEAM_CLIENT_NEWS_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=593110&count=10&maxlength=2000&format=json&feeds=steam_community_announcements"
 
 
 def to_kl_time_string(unix_timestamp: int) -> str:
@@ -124,6 +125,88 @@ def check_steam_monitor_protobuf() -> Dict[str, Any]:
     return result
 
 
+def fetch_steam_client_changelog() -> Optional[Dict[str, Any]]:
+    """
+    Fetches the most recent Steam Client Update announcement from the ISteamNews API.
+    Parses the plain-text content into Discord-formatted bullet sections.
+    Returns: {"title": str, "url": str, "changelog": str} or None.
+    """
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        res = requests.get(STEAM_CLIENT_NEWS_URL, headers=headers, timeout=12)
+        if res.status_code != 200:
+            logger.warning(f"Steam client news API returned HTTP {res.status_code}")
+            return None
+
+        items = res.json().get("appnews", {}).get("newsitems", [])
+        # Find the latest entry whose title contains 'client update'
+        entry = next(
+            (i for i in items if "client update" in i.get("title", "").lower()),
+            None
+        )
+        if not entry:
+            return None
+
+        raw_content = entry.get("contents", "")
+        title = entry.get("title", "Steam Client Update")
+        url = entry.get("url", "https://store.steampowered.com/news/app/593110")
+
+        # Steam client update content is a raw blob with no line breaks.
+        # We insert newlines before recognizable section headers by looking for
+        # capitalized words that appear after a period without a space (direct concatenation).
+        # Pattern: lowercase/punctuation immediately followed by an uppercase word group = section header boundary.
+        normalized = re.sub(
+            r'([a-z.)])([A-Z][a-z])',   # e.g. "downloaded.Homescreen" → "downloaded.\nHomescreen"
+            r'\1\n\2',
+            raw_content
+        )
+
+        lines = [l.strip() for l in normalized.splitlines() if l.strip()]
+
+        changelog_lines = []
+        # Known Steam section header patterns
+        section_re = re.compile(
+            r'^(General|Downloads?|Storage|Library|Family(?: Sharing)?|Chat|Overlay|VR|'
+            r'Remote Play|Broadcast|Screenshot|Controller|Steam Input|Achievement|'
+            r'Mobile App|Settings|Homescreen?|Screensaver|Client|Linux|macOS|Windows|'
+            r'Notifications?|Customization|Friends?|Community|Store)\b',
+            re.IGNORECASE
+        )
+
+        is_first = True
+        for line in lines:
+            if is_first:
+                # Skip or italicize the "A new Steam Client update has been released" preamble
+                changelog_lines.append(f"*{line}*")
+                is_first = False
+                continue
+
+            if section_re.match(line):
+                # Section header — bold it
+                changelog_lines.append(f"\n**{line}**")
+            else:
+                # Regular change item — add as bullet
+                # Break long lines at sentence boundaries
+                for sentence in re.split(r'(?<=[.!?])\s+', line):
+                    sentence = sentence.strip()
+                    if sentence and len(sentence) < 220:
+                        changelog_lines.append(f"• {sentence}")
+
+        changelog_text = "\n".join(changelog_lines).strip()
+        # Discord embed field value cap = 1024 chars
+        if len(changelog_text) > 1000:
+            changelog_text = changelog_text[:997] + "…"
+
+        return {
+            "title": title,
+            "url": url,
+            "changelog": changelog_text or "*(No changelog content parsed)*"
+        }
+    except Exception as e:
+        logger.error(f"Error fetching Steam client changelog: {e}")
+        return None
+
+
 def create_steam_monitor_embed(
     channel_name: str,
     version: int,
@@ -162,18 +245,20 @@ def create_steam_monitor_embed(
     if commit_info and commit_info.get("title"):
         commit_title = commit_info.get("title")
         commit_link = commit_info.get("link")
-        if commit_link:
-            embed.add_field(
-                name="📝 Monitor Commit",
-                value=f"[{commit_title}]({commit_link})",
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="📝 Monitor Commit",
-                value=commit_title,
-                inline=False
-            )
+        commit_val = f"[{commit_title}]({commit_link})" if commit_link else commit_title
+        embed.add_field(name="📝 Protobuf Commit", value=commit_val, inline=False)
+
+    # Fetch and embed latest Steam Client changelog
+    changelog_data = fetch_steam_client_changelog()
+    if changelog_data:
+        cl_title = changelog_data["title"]
+        cl_url = changelog_data["url"]
+        cl_text = changelog_data["changelog"]
+        embed.add_field(
+            name=f"📋 Latest Release Notes: [{cl_title}]({cl_url})",
+            value=cl_text,
+            inline=False
+        )
 
     embed.add_field(
         name="🌐 Monitor Source",

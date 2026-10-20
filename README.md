@@ -111,11 +111,12 @@ You can customize enabled monitors and polling behavior in `config.json`:
 
 ```json
 {
-  "watch_steamrip": true,
+  "watch_steamrip": false,
   "watch_steamunlockonennabe": true,
+  "watch_steam_deals": true,
   "watch_steam_versions": true,
-  "watch_fitgirl": true,
-  "watch_dodi": true,
+  "watch_fitgirl": false,
+  "watch_dodi": false,
   "watch_crackwatch_reddit": true,
   "watch_csrin": false,
   "enable_global_feed": false,
@@ -126,14 +127,15 @@ You can customize enabled monitors and polling behavior in `config.json`:
 }
 ```
 
-- **`watch_steamrip`**: Enable/disable SteamRIP release & update monitoring (`true` by default).
+- **`watch_steam_deals`**: Enable/disable Steam game promotions & sales monitoring with Malaysian Ringgit (`MYR` / `RM`) normal & discount pricing (`true` by default).
 - **`watch_steamunlockonennabe`**: Enable/disable SUO Wannabe (`steamunlockonennabe.click`) monitoring with high-res Steam cover posters (`true` by default).
-- **`watch_fitgirl`**: Enable/disable FitGirl Repacks monitor.
-- **`watch_dodi`**: Enable/disable DODI Repacks monitor.
 - **`watch_crackwatch_reddit`**: Enable/disable Reddit r/CrackWatch monitor.
 - **`watch_steam_versions`**: Enable/disable Steam Client version monitoring.
-- **`watch_csrin`**: Disabled (`false`). (CS.RIN.RU monitoring removed).
-- **`check_interval_seconds`**: Polling frequency in seconds (default: `120` = 2 minutes).
+- **`watch_steamrip`**: Disabled (`false`).
+- **`watch_fitgirl`**: Disabled (`false`).
+- **`watch_dodi`**: Disabled (`false`).
+- **`watch_csrin`**: Disabled (`false`).
+- **`check_interval_seconds`**: Polling frequency in seconds (default: `60` seconds).
 
 ---
 

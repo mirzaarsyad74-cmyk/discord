@@ -367,6 +367,13 @@ class ForumMonitor:
         self.save_state()
         return updates
 
+    def check_steam_deals(self) -> List[Dict[str, Any]]:
+        """Checks for newly featured Steam deals and promotions with MYR prices."""
+        from external_monitors import check_steam_deals
+        updates = check_steam_deals(self.state)
+        self.save_state()
+        return updates
+
 
     def remove_topic(self, topic_id: str):
         topic_id = self.scraper.extract_topic_id(topic_id)

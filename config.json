@@ -1,9 +1,10 @@
 {
-  "watch_steamrip": true,
+  "watch_steamrip": false,
   "watch_steamunlockonennabe": true,
+  "watch_steam_deals": true,
   "watch_steam_versions": true,
-  "watch_fitgirl": true,
-  "watch_dodi": true,
+  "watch_fitgirl": false,
+  "watch_dodi": false,
   "watch_crackwatch_reddit": true,
   "watch_csrin": false,
   "enable_global_feed": false,

@@ -32,12 +32,14 @@ COLOR_SUO = 0x1A9FFF         # Electric Steam Cyan / Blue
 COLOR_FITGIRL = 0xFF1493     # Deep Pink / Magenta
 COLOR_DODI = 0x10AC84        # Emerald / Mint Green
 COLOR_CRACKWATCH = 0xFF4500  # Reddit Vibrant Orange-Red
+COLOR_STEAM_DEAL = 0x2A475E  # Steam Navy / Highlight Blue
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
 SUO_ICON = "https://raw.githubusercontent.com/ZackTheGrumpy/Website/refs/heads/main/logo.ico"
 FITGIRL_ICON = "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg"
 DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2021/04/cropped-cropped-DODI-Repacks-Site-Icon-192x192.png"
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
+STEAM_DEAL_ICON = "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png"
 
 SUO_GENRE_MAP = {
     0: "Unknown Genre",
@@ -709,11 +711,20 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
         genre_name = SUO_GENRE_MAP.get(genre_id, "Game")
         online_supp = g.get("online_supported") or "No"
         bypass_supp = g.get("bypass_supported") or "No"
-
-        # Steam cover art & header posters
-        poster_url = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900_2x.jpg"
-        header_url = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg"
         steam_store_url = f"https://store.steampowered.com/app/{appid}/"
+
+        # Fetch real header image URL from Steam API (handles hash-path CDN URLs for new games)
+        header_url = None
+        try:
+            api_resp = requests.get(
+                f"https://store.steampowered.com/api/appdetails?appids={appid}&filters=basic",
+                timeout=6
+            )
+            if api_resp.status_code == 200:
+                app_data = api_resp.json().get(appid, {}).get("data", {})
+                header_url = app_data.get("header_image")
+        except Exception:
+            pass
 
         # Format added time to GMT+8
         time_kl = parse_pubdate_to_kl(added_on)
@@ -724,8 +735,7 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
             "title": name,
             "url": SUO_BASE_URL,
             "steam_url": steam_store_url,
-            "poster": poster_url,
-            "header": header_url,
+            "header": header_url,  # Real URL from Steam API, or None
             "size_gb": size_gb,
             "genre": genre_name,
             "online_supported": online_supp,
@@ -739,25 +749,29 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
 
 
 def create_suo_embed(item: Dict[str, Any]):
-    """Builds a Discord Embed for a new SteamUnlock Wannabe game release with Steam cover art."""
+    """Builds a Discord Embed for a new SteamUnlock Wannabe game release.
+    Embed URL points to Steam Store so Discord renders a web preview (webview).
+    Image uses Steam's header JPG (460x215) which is the most reliably available asset.
+    """
     import discord
     name = item["title"]
     appid = item["appid"]
 
+    steam_url = item.get("steam_url") or f"https://store.steampowered.com/app/{appid}/"
+
     embed = discord.Embed(
         title=f"🔓 [SUO Wannabe] {name}",
-        url=item.get("steam_url") or item["url"],
+        # URL = Steam Store page → Discord will render store page web preview on click
+        url=steam_url,
         color=COLOR_SUO
     )
-    # Thumbnail: Horizontal Steam header
-    if item.get("header"):
-        embed.set_thumbnail(url=item["header"])
 
-    # Full-width game poster: Steam 600x900 box art
-    if item.get("poster"):
-        embed.set_image(url=item["poster"])
+    # Use the real header URL from Steam appdetails API (if available)
+    header_url = item.get("header")
+    if header_url:
+        embed.set_image(url=header_url)
 
-    embed.add_field(name="🎮 Game Title", value=f"**{name}**", inline=False)
+    embed.add_field(name="🎮 Game Title", value=f"**[{name}]({steam_url})**", inline=False)
     embed.add_field(name="🆔 Steam AppID", value=f"`{appid}`", inline=True)
     embed.add_field(name="📦 Download Size", value=f"`{item.get('size_gb', 'N/A')}`", inline=True)
     embed.add_field(name="🏷️ Primary Genre", value=f"**{item.get('genre', 'Game')}**", inline=True)
@@ -765,12 +779,156 @@ def create_suo_embed(item: Dict[str, Any]):
     embed.add_field(name="⚡ Bypass Support", value=f"**{item.get('bypass_supported', 'No')}**", inline=True)
     embed.add_field(name="🕒 Added Time (GMT+8)", value=item.get("time_kl", parse_pubdate_to_kl("")), inline=False)
     embed.add_field(
-        name="🔗 Game & Catalog Links",
-        value=f"👉 **[Open SUO Wannabe Catalog]({item['url']})**\n🛒 **[View on Steam Store]({item['steam_url']})**",
+        name="🔗 Links",
+        value=f"🛒 **[Steam Store Page]({steam_url})**\n👉 **[SUO Wannabe Catalog]({item['url']})**",
         inline=False
     )
-    embed.set_footer(text="SteamUnlock Wannabe Monitor • Steam Fastly CDN Posters • GMT+8", icon_url=SUO_ICON)
+    embed.set_footer(text="SteamUnlock Wannabe Monitor • Steam Akamai CDN • GMT+8", icon_url=SUO_ICON)
     return embed
 
 
+def check_steam_deals(state: dict) -> List[Dict[str, Any]]:
+    """
+    Checks for newly featured Steam specials and discounts with pricing in MYR (RM).
+    Monitors Steam's official featured categories endpoint (cc=my, l=en).
+    """
+    steam_deals_state = state.setdefault("steam_deals", {})
+    seen_deal_keys = set(steam_deals_state.setdefault("seen_deal_keys", []))
 
+    url = "https://store.steampowered.com/api/featuredcategories/?cc=my&l=en"
+    headers = {
+        "User-Agent": STANDARD_HEADERS["User-Agent"],
+        "Accept": "application/json"
+    }
+
+    try:
+        res = requests.get(url, headers=headers, timeout=12)
+        if res.status_code != 200:
+            logger.warning(f"Failed to fetch Steam promotions: HTTP {res.status_code}")
+            return []
+
+        data = res.json()
+        specials = data.get("specials", {}).get("items", [])
+        if not specials:
+            return []
+
+        # First run initialization: record current special keys so we don't spam on initial startup
+        if not seen_deal_keys:
+            logger.info(f"Initializing Steam Specials tracker with {len(specials)} current featured deals...")
+            for item in specials:
+                app_id = item.get("id")
+                disc = item.get("discount_percent", 0)
+                if app_id:
+                    seen_deal_keys.add(f"{app_id}_{disc}")
+            steam_deals_state["seen_deal_keys"] = list(seen_deal_keys)[-300:]
+            return []
+
+        new_deals = []
+        for item in specials:
+            app_id = item.get("id")
+            name = item.get("name")
+            discount_pct = item.get("discount_percent", 0)
+            orig_price_raw = item.get("original_price")
+            final_price_raw = item.get("final_price")
+            currency = item.get("currency", "MYR")
+
+            # Must have discount and valid id/prices
+            if not app_id or not name or discount_pct <= 0:
+                continue
+
+            deal_key = f"{app_id}_{discount_pct}"
+            if deal_key in seen_deal_keys:
+                continue
+
+            orig_rm = (orig_price_raw / 100.0) if orig_price_raw is not None else 0.0
+            final_rm = (final_price_raw / 100.0) if final_price_raw is not None else 0.0
+            savings_rm = max(0.0, orig_rm - final_rm)
+
+            # Expiration
+            exp_ts = item.get("discount_expiration")
+            expiry_str = "Limited Time Deal"
+            if exp_ts:
+                try:
+                    exp_dt = datetime.fromtimestamp(exp_ts, tz=timezone.utc).astimezone(KL_TZ)
+                    expiry_str = exp_dt.strftime("%Y-%m-%d %I:%M %p GMT+8")
+                except Exception:
+                    pass
+
+            now_kl = datetime.now(KL_TZ).strftime("%Y-%m-%d %I:%M %p GMT+8")
+
+            deal_obj = {
+                "id": app_id,
+                "name": name,
+                "discount_percent": discount_pct,
+                "original_price": orig_rm,
+                "final_price": final_rm,
+                "savings": savings_rm,
+                "currency": currency,
+                "header_image": item.get("header_image") or item.get("large_capsule_image"),
+                "store_url": f"https://store.steampowered.com/app/{app_id}/",
+                "discount_expiration": expiry_str,
+                "windows": item.get("windows_available", True),
+                "mac": item.get("mac_available", False),
+                "linux": item.get("linux_available", False),
+                "time_kl": now_kl
+            }
+
+            new_deals.append(deal_obj)
+            seen_deal_keys.add(deal_key)
+
+        steam_deals_state["seen_deal_keys"] = list(seen_deal_keys)[-300:]
+        return new_deals
+
+    except Exception as e:
+        logger.error(f"Error checking Steam promotions: {e}")
+        return []
+
+
+def create_steam_deal_embed(item: Dict[str, Any]):
+    """Builds a Discord Embed for Steam game promotions formatted with Malaysian Ringgit (MYR/RM)."""
+    import discord
+    name = item["name"]
+    app_id = item["id"]
+    disc_pct = item["discount_percent"]
+    orig_rm = item["original_price"]
+    final_rm = item["final_price"]
+    savings_rm = item["savings"]
+
+    platforms = []
+    if item.get("windows"):
+        platforms.append("🪟 Windows")
+    if item.get("mac"):
+        platforms.append("🍎 macOS")
+    if item.get("linux"):
+        platforms.append("🐧 Linux / Steam Deck")
+    platform_str = " • ".join(platforms) if platforms else "PC"
+
+    # Color tiering based on discount depth: > 70% gets gold/legendary color, otherwise Steam blue
+    embed_color = 0xF1C40F if disc_pct >= 70 else COLOR_STEAM_DEAL
+
+    embed = discord.Embed(
+        title=f"🔥 [Steam Deal • -{disc_pct}%] {name}",
+        url=item["store_url"],
+        color=embed_color
+    )
+
+    if item.get("header_image"):
+        embed.set_image(url=item["header_image"])
+    embed.set_thumbnail(url=STEAM_DEAL_ICON)
+
+    embed.add_field(name="🎮 Game Title", value=f"**[{name}]({item['store_url']})**", inline=False)
+    embed.add_field(name="🏷️ Discount", value=f"**🔥 -{disc_pct}% OFF**", inline=True)
+    embed.add_field(name="💵 Normal Price", value=f"~~RM {orig_rm:.2f}~~", inline=True)
+    embed.add_field(name="💰 Promo Price (MYR)", value=f"**`RM {final_rm:.2f}`**", inline=True)
+    embed.add_field(name="💸 You Save", value=f"**RM {savings_rm:.2f}**", inline=True)
+    embed.add_field(name="💻 Platforms", value=platform_str, inline=True)
+    embed.add_field(name="⏳ Deal Ends", value=f"`{item['discount_expiration']}`", inline=True)
+
+    embed.add_field(
+        name="🛒 Steam Store Link",
+        value=f"👉 **[Purchase {name} on Steam Store (RM {final_rm:.2f})]({item['store_url']})**",
+        inline=False
+    )
+
+    embed.set_footer(text="Steam Promotion Monitor • Prices in Malaysian Ringgit (MYR/RM) • GMT+8", icon_url=STEAM_DEAL_ICON)
+    return embed
