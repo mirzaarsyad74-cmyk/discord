@@ -273,12 +273,7 @@ async def bot_monitor_task():
             if steam_updates:
                 from steam_client_watcher import create_steam_monitor_embed
                 for upd in steam_updates:
-                    embed = create_steam_monitor_embed(
-                        channel_name=upd["channel_name"],
-                        version=upd["version"],
-                        build_kl_time=upd["build_kl"],
-                        commit_info=upd.get("commit_info")
-                    )
+                    embed = create_steam_monitor_embed(upd)
                     await channel.send(embed=embed)
         except Exception as e:
             logger.error(f"Error checking Steam Client updates: {e}")
@@ -582,12 +577,13 @@ async def run_webhook_daemon(webhook_url: str):
             logger.info(f"Initializing subforum {f_id} state...")
             monitor.check_subforum(f_id, is_first_run_init=True)
 
-    # Send test post on first boot so user immediately knows the bot is alive!
-    try:
-        safe_webhook_send(webhook, create_startup_test_embed(), username="Release Monitor Bot")
-        logger.info("🚀 Sent startup test embed to Discord webhook!")
-    except Exception as ex:
-        logger.warning(f"Could not send startup test embed: {ex}")
+    # Send test post on boot only if explicitly enabled (prevents spam on container restarts)
+    if os.getenv("SEND_STARTUP_TEST", "").lower() in ("true", "1") or config.get("send_startup_test", False):
+        try:
+            safe_webhook_send(webhook, create_startup_test_embed(), username="Release Monitor Bot")
+            logger.info("🚀 Sent startup test embed to Discord webhook!")
+        except Exception as ex:
+            logger.warning(f"Could not send startup test embed: {ex}")
 
     while True:
         try:
@@ -651,19 +647,14 @@ async def run_webhook_daemon(webhook_url: str):
 
             # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
             if current_cfg.get("watch_steam_versions", True):
-                logger.info("Checking OpenSteam001/steam-monitor for Steam Client updates...")
+                logger.info("Checking official Valve sources for Steam Client updates...")
                 steam_updates = await asyncio.to_thread(monitor.check_steam_client_version)
                 if steam_updates:
                     from steam_client_watcher import create_steam_monitor_embed
                     for upd in steam_updates:
-                        embed = create_steam_monitor_embed(
-                            channel_name=upd["channel_name"],
-                            version=upd["version"],
-                            build_kl_time=upd["build_kl"],
-                            commit_info=upd.get("commit_info")
-                        )
+                        embed = create_steam_monitor_embed(upd)
                         safe_webhook_send(webhook, embed, username="Steam Client Watch")
-                        logger.info(f"Posted Steam Client Version Update: {upd['channel_name']} v{upd['version']}")
+                        logger.info(f"Posted Steam Client Update: {upd.get('title')} ({upd.get('branch_display')})")
 
             # Check FitGirl Repacks (Signature Magenta Color)
             if current_cfg.get("watch_fitgirl", True):

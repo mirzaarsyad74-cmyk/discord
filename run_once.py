@@ -222,18 +222,13 @@ def main():
 
     # 7. Steam Client Version Watch (OpenSteam001/steam-monitor protobuf)
     if config.get("watch_steam_versions", True):
-        logger.info("Checking OpenSteam001/steam-monitor protobuf branch for Steam Client updates...")
+        logger.info("Checking official Valve sources for Steam Client updates...")
         steam_updates = monitor.check_steam_client_version()
         if steam_updates:
             for upd in steam_updates:
-                embed = create_steam_monitor_embed(
-                    channel_name=upd["channel_name"],
-                    version=upd["version"],
-                    build_kl_time=upd["build_kl"],
-                    commit_info=upd.get("commit_info")
-                )
+                embed = create_steam_monitor_embed(upd)
                 safe_webhook_send(webhook, embed, username="Steam Client Watch")
-                logger.info(f"Posted Steam Client Version Update: {upd['channel_name']} v{upd['version']}")
+                logger.info(f"Posted Steam Client Update: {upd.get('title')} ({upd.get('branch_display')})")
 
     # 8. FitGirl Repacks Watcher (Signature Magenta Color)
     if config.get("watch_fitgirl", False):

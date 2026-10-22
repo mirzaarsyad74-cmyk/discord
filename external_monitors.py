@@ -24,7 +24,7 @@ SUO_API_URL = "https://steamunlockonennabe.duckdns.org/api/onennabe"
 SUO_DIRECT_IP_URL = "https://34.158.47.50/api/onennabe"
 FITGIRL_FEED_URL = "https://fitgirl-repacks.site/feed/"
 DODI_FEED_URL = "https://dodi-repacks.site/feed/"
-CRACKWATCH_RSS_URL = "https://old.reddit.com/r/CrackWatch/new/.rss"
+CRACKWATCH_RSS_URL = "https://www.reddit.com/r/CrackWatch/new/.rss"
 
 # Brand Colors
 COLOR_STEAMRIP = 0x6C5CE7    # Royal Indigo / Vivid Violet
@@ -147,10 +147,23 @@ def fetch_web_content(url: str, headers: dict = None, timeout: int = 8) -> Optio
         return None
 
 
+def update_seen_list(existing: List[Any], new_items: List[Any], max_len: int = 800) -> List[str]:
+    """
+    Maintains seen IDs in strictly chronological (FIFO) order.
+    Preserves existing order, appends new items, and safely trims
+    from the beginning so recently seen items are NEVER evicted.
+    """
+    seen_dict = {str(x): None for x in (existing or []) if x}
+    for item in new_items:
+        if item:
+            seen_dict[str(item)] = None
+    return list(seen_dict.keys())[-max_len:]
+
+
 def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
     """Fetches new releases from FitGirl Repacks official feed."""
     fg_state = state.setdefault("fitgirl", {})
-    seen_links = set(fg_state.setdefault("seen_links", []))
+    seen_links = set(str(x) for x in fg_state.get("seen_links", []))
 
     try:
         content = fetch_web_content(FITGIRL_FEED_URL, timeout=6)
@@ -165,14 +178,19 @@ def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
         # First run initialization
         if not seen_links:
             logger.info("Initializing FitGirl tracker with current items...")
+            init_links = []
             for it in items:
                 link_tag = it.find("link")
-                if link_tag and link_tag.next_sibling:
-                    seen_links.add(link_tag.next_sibling.strip())
-            fg_state["seen_links"] = list(seen_links)[-200:]
+                link = link_tag.next_sibling.strip() if (link_tag and link_tag.next_sibling) else ""
+                if not link and link_tag:
+                    link = link_tag.get_text(strip=True)
+                if link:
+                    init_links.append(link)
+            fg_state["seen_links"] = update_seen_list([], init_links, max_len=500)
             return []
 
         new_releases = []
+        newly_seen = []
         for it in items:
             title_tag = it.find("title")
             title = title_tag.get_text(strip=True) if title_tag else ""
@@ -187,6 +205,7 @@ def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
             # Skip general administrative / upcoming summary posts
             if title.lower() in ("upcoming repacks", "donation instructions", "troubleshooting"):
                 seen_links.add(link)
+                newly_seen.append(link)
                 continue
 
             pubdate_tag = it.find("pubdate")
@@ -200,8 +219,10 @@ def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
                 "time_kl": kl_time
             })
             seen_links.add(link)
+            newly_seen.append(link)
 
-        fg_state["seen_links"] = list(seen_links)[-200:]
+        if newly_seen:
+            fg_state["seen_links"] = update_seen_list(fg_state.get("seen_links", []), newly_seen, max_len=500)
         return list(reversed(new_releases))
     except Exception as e:
         logger.error(f"Error checking FitGirl feed: {e}")
@@ -211,7 +232,7 @@ def check_fitgirl_feed(state: dict) -> List[Dict[str, Any]]:
 def check_dodi_feed(state: dict) -> List[Dict[str, Any]]:
     """Fetches new releases from DODI Repacks official feed."""
     dodi_state = state.setdefault("dodi", {})
-    seen_links = set(dodi_state.setdefault("seen_links", []))
+    seen_links = set(str(x) for x in dodi_state.get("seen_links", []))
 
     try:
         content = fetch_web_content(DODI_FEED_URL, timeout=15)
@@ -226,14 +247,19 @@ def check_dodi_feed(state: dict) -> List[Dict[str, Any]]:
         # First run initialization
         if not seen_links:
             logger.info("Initializing DODI tracker with current items...")
+            init_links = []
             for it in items:
                 link_tag = it.find("link")
-                if link_tag and link_tag.next_sibling:
-                    seen_links.add(link_tag.next_sibling.strip())
-            dodi_state["seen_links"] = list(seen_links)[-200:]
+                link = link_tag.next_sibling.strip() if (link_tag and link_tag.next_sibling) else ""
+                if not link and link_tag:
+                    link = link_tag.get_text(strip=True)
+                if link:
+                    init_links.append(link)
+            dodi_state["seen_links"] = update_seen_list([], init_links, max_len=500)
             return []
 
         new_releases = []
+        newly_seen = []
         for it in items:
             title_tag = it.find("title")
             title = title_tag.get_text(strip=True) if title_tag else ""
@@ -259,8 +285,10 @@ def check_dodi_feed(state: dict) -> List[Dict[str, Any]]:
                 "time_kl": kl_time
             })
             seen_links.add(link)
+            newly_seen.append(link)
 
-        dodi_state["seen_links"] = list(seen_links)[-200:]
+        if newly_seen:
+            dodi_state["seen_links"] = update_seen_list(dodi_state.get("seen_links", []), newly_seen, max_len=500)
         return list(reversed(new_releases))
     except Exception as e:
         logger.error(f"Error checking DODI feed: {e}")
@@ -270,7 +298,7 @@ def check_dodi_feed(state: dict) -> List[Dict[str, Any]]:
 def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
     """Fetches new releases and scene crack announcements from r/CrackWatch."""
     cw_state = state.setdefault("crackwatch", {})
-    seen_ids = set(cw_state.setdefault("seen_ids", []))
+    seen_ids = set(str(x) for x in cw_state.get("seen_ids", []))
 
     try:
         import html
@@ -289,14 +317,16 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
         # First run initialization
         if not seen_ids:
             logger.info("Initializing r/CrackWatch tracker with current entries...")
+            init_ids = []
             for e in entries:
                 id_m = re.search(r'<id>(.*?)</id>', e)
                 if id_m:
-                    seen_ids.add(id_m.group(1).strip())
-            cw_state["seen_ids"] = list(seen_ids)[-250:]
+                    init_ids.append(id_m.group(1).strip())
+            cw_state["seen_ids"] = update_seen_list([], init_ids, max_len=500)
             return []
 
         new_items = []
+        newly_seen = []
         for e in entries:
             id_m = re.search(r'<id>(.*?)</id>', e)
             entry_id = id_m.group(1).strip() if id_m else ""
@@ -327,6 +357,7 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
 
             if not is_valid_release:
                 seen_ids.add(entry_id)
+                newly_seen.append(entry_id)
                 continue
 
             kl_time = parse_pubdate_to_kl(updated)
@@ -338,8 +369,10 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
                 "time_kl": kl_time
             })
             seen_ids.add(entry_id)
+            newly_seen.append(entry_id)
 
-        cw_state["seen_ids"] = list(seen_ids)[-250:]
+        if newly_seen:
+            cw_state["seen_ids"] = update_seen_list(cw_state.get("seen_ids", []), newly_seen, max_len=500)
         return list(reversed(new_items))
     except Exception as e:
         logger.error(f"Error checking r/CrackWatch: {e}")
@@ -428,15 +461,63 @@ def check_steamrip_updates(state: dict) -> List[Dict[str, Any]]:
     """
     Fetches newly added game releases and recently updated games from https://steamrip.com/.
     Bypasses Cloudflare protection using curl_cffi browser impersonation.
+    Deduplicates across Home Page and Updated Games page so no release is double-posted.
     """
     sr_state = state.setdefault("steamrip", {})
-    seen_ids = set(sr_state.setdefault("seen_ids", []))
-    items: List[Dict[str, Any]] = []
+    seen_ids = set(str(x) for x in sr_state.get("seen_ids", []))
+    seen_slugs = set(str(x) for x in sr_state.get("seen_slugs", []))
+    raw_items: List[Dict[str, Any]] = []
 
-    # Helper for fetching via curl_cffi or requests
     get_html = fetch_web_content
 
-    # 1. Fetch Home Page (New Game Releases)
+    # 1. Fetch Updated Games Page first (has more specific patch/build information)
+    upd_html = get_html(STEAMRIP_UPDATED_URL)
+    if upd_html:
+        try:
+            soup2 = BeautifulSoup(upd_html, "html.parser")
+            current_date = ""
+            container = soup2.select_one(".entry-content > div") or soup2.select_one(".entry-content")
+            if container:
+                for child in container.children:
+                    if not child.name:
+                        continue
+                    if "updated-list-date" in child.get("class", []):
+                        current_date = child.get_text(strip=True)
+                    elif "updated-list" in child.get("class", []):
+                        for li in child.find_all("li"):
+                            a = li.find("a")
+                            if not a:
+                                continue
+                            href = a.get("href", "")
+                            if not href:
+                                continue
+                            full_url = urljoin(STEAMRIP_BASE_URL, href)
+                            slug = full_url.rstrip("/").split("/")[-1]
+                            title_el = a.select_one(".updated-card-title")
+                            raw_title = title_el.get_text(strip=True) if title_el else a.get_text(strip=True)
+                            clean_title = re.sub(r'(?i)\s*free\s+download\b', '', raw_title).strip()
+                            build_el = a.select_one(".updated-list-build")
+                            build = build_el.get_text(strip=True) if build_el else ""
+
+                            item_id = f"upd_{slug}_{build}" if build else f"upd_{slug}"
+                            raw_items.append({
+                                "id": item_id,
+                                "slug": slug,
+                                "title": clean_title,
+                                "raw_title": raw_title,
+                                "url": full_url,
+                                "version": build,
+                                "meta": f"Updated: {current_date}" if current_date else "Game Update",
+                                "category": "Game Update",
+                                "thumbnail": None,
+                                "poster": None,
+                                "type": "Game Update",
+                                "time_kl": parse_pubdate_to_kl(current_date) if current_date else parse_pubdate_to_kl("")
+                            })
+        except Exception as e:
+            logger.error(f"Error parsing SteamRIP updated games: {e}")
+
+    # 2. Fetch Home Page (New Game Releases)
     home_html = get_html(STEAMRIP_BASE_URL)
     if home_html:
         try:
@@ -454,6 +535,7 @@ def check_steamrip_updates(state: dict) -> List[Dict[str, Any]]:
                 if not href:
                     continue
                 full_url = urljoin(STEAMRIP_BASE_URL, href)
+                slug = full_url.rstrip("/").split("/")[-1]
 
                 title_el = c.select_one(".post-title a") or c.select_one(".the-post-title")
                 raw_title = title_el.get_text(strip=True) if title_el else ""
@@ -479,13 +561,14 @@ def check_steamrip_updates(state: dict) -> List[Dict[str, Any]]:
                     if img_src and not img_src.startswith("data:"):
                         img_src = urljoin(STEAMRIP_BASE_URL, img_src)
 
-                item_id = f"post_{post_id}" if post_id else f"url_{full_url}"
+                item_id = f"post_{post_id}" if post_id else f"url_{slug}"
                 poster_src = (
                     img_src.replace("_thumbnail_", "_featured_").replace("_thumbnail.", "_featured.")
                     if img_src else None
                 )
-                items.append({
+                raw_items.append({
                     "id": item_id,
+                    "slug": slug,
                     "title": clean_title,
                     "raw_title": raw_title,
                     "url": full_url,
@@ -500,56 +583,19 @@ def check_steamrip_updates(state: dict) -> List[Dict[str, Any]]:
         except Exception as e:
             logger.error(f"Error parsing SteamRIP home page: {e}")
 
-    # 2. Fetch Updated Games Page (Game Patches & Updates)
-    upd_html = get_html(STEAMRIP_UPDATED_URL)
-    if upd_html:
-        try:
-            soup2 = BeautifulSoup(upd_html, "html.parser")
-            current_date = ""
-            container = soup2.select_one(".entry-content > div") or soup2.select_one(".entry-content")
-            if container:
-                for child in container.children:
-                    if not child.name:
-                        continue
-                    if "updated-list-date" in child.get("class", []):
-                        current_date = child.get_text(strip=True)
-                    elif "updated-list" in child.get("class", []):
-                        for li in child.find_all("li"):
-                            a = li.find("a")
-                            if not a:
-                                continue
-                            href = a.get("href", "")
-                            if not href:
-                                continue
-                            full_url = urljoin(STEAMRIP_BASE_URL, href)
-                            title_el = a.select_one(".updated-card-title")
-                            raw_title = title_el.get_text(strip=True) if title_el else a.get_text(strip=True)
-                            clean_title = re.sub(r'(?i)\s*free\s+download\b', '', raw_title).strip()
-                            build_el = a.select_one(".updated-list-build")
-                            build = build_el.get_text(strip=True) if build_el else ""
+    if not raw_items:
+        return []
 
-                            item_id = f"upd_{full_url}_{build}"
-                            items.append({
-                                "id": item_id,
-                                "title": clean_title,
-                                "raw_title": raw_title,
-                                "url": full_url,
-                                "version": build,
-                                "meta": f"Updated: {current_date}" if current_date else "Game Update",
-                                "category": "Game Update",
-                                "thumbnail": None,
-                                "poster": None,
-                                "type": "Game Update",
-                                "time_kl": parse_pubdate_to_kl(current_date) if current_date else parse_pubdate_to_kl("")
-                            })
-        except Exception as e:
-            logger.error(f"Error parsing SteamRIP updated games: {e}")
-
-    if not items:
+    # First run initialization: record current items to state so we don't spam history
+    if not seen_ids and not seen_slugs:
+        logger.info(f"Initializing SteamRIP tracker with {len(raw_items)} current items...")
+        init_ids = [it["id"] for it in raw_items]
+        init_slugs = [it["slug"] for it in raw_items if it.get("slug")]
+        sr_state["seen_ids"] = update_seen_list([], init_ids, max_len=600)
+        sr_state["seen_slugs"] = update_seen_list([], init_slugs, max_len=600)
         return []
 
     def fetch_steamrip_poster(game_url: str) -> Optional[str]:
-        """Fetches high-res game poster (og:image) directly from the SteamRIP game page."""
         page_html = get_html(game_url)
         if page_html:
             try:
@@ -566,24 +612,47 @@ def check_steamrip_updates(state: dict) -> List[Dict[str, Any]]:
                 logger.debug(f"Could not extract poster from {game_url}: {ex}")
         return None
 
-    # First run initialization: record current items to state so we don't spam history
-    if not seen_ids:
-        logger.info(f"Initializing SteamRIP tracker with {len(items)} current items...")
-        for it in items:
-            seen_ids.add(it["id"])
-        sr_state["seen_ids"] = list(seen_ids)[-300:]
-        return []
+    # Deduplicate items in current batch (e.g. if a game is both in Updated and Home)
+    deduped_items: List[Dict[str, Any]] = []
+    seen_in_batch = set()
+    for it in raw_items:
+        slug = it.get("slug", "")
+        ver = it.get("version", "").strip()
+        sig = f"{slug}:{ver}" if ver else slug
+        if sig in seen_in_batch or slug in seen_in_batch:
+            continue
+        seen_in_batch.add(sig)
+        if it.get("type") == "Game Update":
+            seen_in_batch.add(slug)
+        deduped_items.append(it)
 
     new_releases: List[Dict[str, Any]] = []
-    for it in items:
-        if it["id"] not in seen_ids:
-            # If item does not have a poster yet (e.g. from updated list), fetch og:image
-            if not it.get("poster"):
-                it["poster"] = fetch_steamrip_poster(it["url"])
-            new_releases.append(it)
-            seen_ids.add(it["id"])
+    newly_seen_ids = []
+    newly_seen_slugs = []
 
-    sr_state["seen_ids"] = list(seen_ids)[-300:]
+    for it in deduped_items:
+        slug = it.get("slug", "")
+        ver = it.get("version", "").strip()
+        sig = f"{slug}:{ver}" if ver else slug
+        item_id = it["id"]
+
+        # Check if already seen by ID or slug signature
+        if item_id in seen_ids or sig in seen_slugs:
+            continue
+
+        if not it.get("poster"):
+            it["poster"] = fetch_steamrip_poster(it["url"])
+
+        new_releases.append(it)
+        seen_ids.add(item_id)
+        seen_slugs.add(sig)
+        newly_seen_ids.append(item_id)
+        newly_seen_slugs.append(sig)
+
+    if newly_seen_ids:
+        sr_state["seen_ids"] = update_seen_list(sr_state.get("seen_ids", []), newly_seen_ids, max_len=600)
+        sr_state["seen_slugs"] = update_seen_list(sr_state.get("seen_slugs", []), newly_seen_slugs, max_len=600)
+
     return list(reversed(new_releases))
 
 
@@ -730,9 +799,10 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
     """
     Checks for newly published games on SteamUnlock Wannabe (https://steamunlockonennabe.click/).
     Uses streaming chunk extraction to get the latest additions in fractions of a second.
+    Uses strict FIFO ordered tracking to prevent duplicate postings.
     """
     suo_state = state.setdefault("suo", {})
-    seen_appids = set(suo_state.setdefault("seen_appids", []))
+    seen_appids = set(str(x) for x in suo_state.get("seen_appids", []))
 
     req_limit = 250 if not seen_appids else 80
     data = fetch_suo_catalog(limit=req_limit, timeout=4)
@@ -742,14 +812,16 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
     # First run initialization: record top catalog items to prevent spam
     if not seen_appids:
         logger.info(f"Initializing SUO Wannabe tracker with {len(data)} current catalog items...")
+        init_appids = []
         for g in data:
             appid = str(g.get("appid") or "").strip()
             if appid:
-                seen_appids.add(appid)
-        suo_state["seen_appids"] = list(seen_appids)[-500:]
+                init_appids.append(appid)
+        suo_state["seen_appids"] = update_seen_list([], init_appids, max_len=1500)
         return []
 
     new_items: List[Dict[str, Any]] = []
+    newly_seen_appids = []
     # Inspect top 60 items for new additions
     for g in data[:60]:
         appid = str(g.get("appid") or "").strip()
@@ -795,8 +867,11 @@ def check_suo_updates(state: dict) -> List[Dict[str, Any]]:
             "time_kl": time_kl
         })
         seen_appids.add(appid)
+        newly_seen_appids.append(appid)
 
-    suo_state["seen_appids"] = list(seen_appids)[-500:]
+    if newly_seen_appids:
+        suo_state["seen_appids"] = update_seen_list(suo_state.get("seen_appids", []), newly_seen_appids, max_len=1500)
+
     return list(reversed(new_items))
 
 
@@ -843,9 +918,10 @@ def check_steam_deals(state: dict) -> List[Dict[str, Any]]:
     """
     Checks for newly featured Steam specials and discounts with pricing in MYR (RM).
     Monitors Steam's official featured categories endpoint (cc=my, l=en).
+    Uses strictly ordered FIFO deduplication to prevent reposting active deals.
     """
     steam_deals_state = state.setdefault("steam_deals", {})
-    seen_deal_keys = set(steam_deals_state.setdefault("seen_deal_keys", []))
+    seen_deal_keys = set(str(x) for x in steam_deals_state.get("seen_deal_keys", []))
 
     url = "https://store.steampowered.com/api/featuredcategories/?cc=my&l=en"
     headers = {
@@ -867,15 +943,17 @@ def check_steam_deals(state: dict) -> List[Dict[str, Any]]:
         # First run initialization: record current special keys so we don't spam on initial startup
         if not seen_deal_keys:
             logger.info(f"Initializing Steam Specials tracker with {len(specials)} current featured deals...")
+            init_keys = []
             for item in specials:
                 app_id = item.get("id")
                 disc = item.get("discount_percent", 0)
                 if app_id:
-                    seen_deal_keys.add(f"{app_id}_{disc}")
-            steam_deals_state["seen_deal_keys"] = list(seen_deal_keys)[-300:]
+                    init_keys.append(f"{app_id}_{disc}")
+            steam_deals_state["seen_deal_keys"] = update_seen_list([], init_keys, max_len=1000)
             return []
 
         new_deals = []
+        newly_seen_keys = []
         for item in specials:
             app_id = item.get("id")
             name = item.get("name")
@@ -927,8 +1005,11 @@ def check_steam_deals(state: dict) -> List[Dict[str, Any]]:
 
             new_deals.append(deal_obj)
             seen_deal_keys.add(deal_key)
+            newly_seen_keys.append(deal_key)
 
-        steam_deals_state["seen_deal_keys"] = list(seen_deal_keys)[-300:]
+        if newly_seen_keys:
+            steam_deals_state["seen_deal_keys"] = update_seen_list(steam_deals_state.get("seen_deal_keys", []), newly_seen_keys, max_len=1000)
+
         return new_deals
 
     except Exception as e:

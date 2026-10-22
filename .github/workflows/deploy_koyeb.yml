@@ -7,6 +7,8 @@ on:
     paths-ignore:
       - 'README.md'
       - '.github/workflows/**'
+      - 'data/**'
+      - 'data/state.json'
   workflow_dispatch:
 
 jobs:
@@ -14,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Koyeb Rebuild & Deploy
+        if: "!contains(github.event.head_commit.message, '[skip ci]')"
         env:
           KOYEB_API_TOKEN: ${{ secrets.KOYEB_API_TOKEN || 'v760whjgplp2f7t7y720wyvl7ni2yfeg4oa3hnuuwyn7yp224kbzz84bshyhua5q' }}
         run: |

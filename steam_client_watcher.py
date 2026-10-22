@@ -125,103 +125,231 @@ def check_steam_monitor_protobuf() -> Dict[str, Any]:
     return result
 
 
+def format_steam_changelog(raw_text: str) -> str:
+    """
+    Parses Steam's raw BBCode / HTML announcement into Discord-formatted markdown.
+    Preserves section headers and bullet points cleanly.
+    """
+    if not raw_text:
+        return "*(No release notes provided)*"
+
+    # 1. BBCode bold -> Markdown bold header
+    text = re.sub(r'\[b\](.*?)\[/b\]', r'\n**\1**\n', raw_text)
+    # 2. List items -> bullets
+    text = re.sub(r'\[\*\](?:\[p\])?(.*?)(?:\[/p\])?\[/\*\]', r'• \1\n', text, flags=re.DOTALL)
+    # 3. Clean remaining BBCode tags
+    text = re.sub(r'\[/?(?:p|list|olist)\]', '\n', text)
+    text = re.sub(r'\[img\].*?\[/img\]', '', text)
+    text = re.sub(r'\[url=(.*?)\](.*?)\[/url\]', r'[\2](\1)', text)
+    text = re.sub(r'<br\s*/?>', '\n', text)
+    text = re.sub(r'<[^>]+>', '', text)
+
+    lines = []
+    is_first = True
+    for l in text.splitlines():
+        l_str = l.strip()
+        if not l_str:
+            continue
+        if is_first and ("a new steam client update" in l_str.lower() or "steam client update has been released" in l_str.lower()):
+            lines.append(f"*{l_str}*")
+            is_first = False
+        elif l_str.startswith("**") and l_str.endswith("**"):
+            lines.append(f"\n{l_str}")
+        elif l_str.startswith("•"):
+            lines.append(l_str)
+        else:
+            lines.append(f"• {l_str}")
+
+    changelog_text = "\n".join(lines).strip()
+    if len(changelog_text) > 1000:
+        changelog_text = changelog_text[:997] + "…"
+    return changelog_text or "*(No release notes provided)*"
+
+
+def check_steam_client_updates(
+    last_seen_stable: int = 0,
+    last_seen_beta: int = 0
+) -> tuple:
+    """
+    Monitors official Steam Client updates from Valve's official sources:
+    1. Stable channel: Valve ISteamNews API for AppID 593110 (Steam Client).
+    2. Beta channel: Valve Steam Client Beta RSS announcements.
+    Returns: (new_updates_list, new_latest_stable_date, new_latest_beta_date)
+    """
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    new_updates: List[Dict[str, Any]] = []
+    new_stable_date: Optional[int] = None
+    new_beta_date: Optional[int] = None
+
+    # Fetch optional protobuf commit info if reachable (enhancement)
+    latest_commit = None
+    try:
+        proto_data = check_steam_monitor_protobuf()
+        latest_commit = proto_data.get("latest_commit")
+    except Exception as e:
+        logger.debug(f"Could not fetch protobuf info: {e}")
+
+    # 1. Check Stable Steam Client Updates (Valve ISteamNews API)
+    try:
+        res = requests.get(STEAM_CLIENT_NEWS_URL, headers=headers, timeout=12)
+        if res.status_code == 200:
+            items = res.json().get("appnews", {}).get("newsitems", [])
+            client_updates = [i for i in items if "client update" in i.get("title", "").lower()]
+            if client_updates:
+                client_updates.sort(key=lambda x: int(x.get("date", 0)), reverse=True)
+                latest_stable_item = client_updates[0]
+                latest_stable_ts = int(latest_stable_item.get("date", 0))
+
+                if last_seen_stable == 0:
+                    logger.info(f"Initializing Steam Client Stable tracker with date: {latest_stable_ts}")
+                    new_stable_date = latest_stable_ts
+                elif latest_stable_ts > last_seen_stable:
+                    for item in client_updates[:1]:
+                        ts = int(item.get("date", 0))
+                        gid = item.get("gid", "")
+                        store_url = f"https://store.steampowered.com/news/app/593110/view/{gid}" if gid else item.get("url", "https://store.steampowered.com/news/app/593110")
+                        cl_text = format_steam_changelog(item.get("contents", ""))
+                        new_updates.append({
+                            "channel_name": "Stable",
+                            "branch_display": "Stable Client",
+                            "version": ts,
+                            "title": item.get("title", "Steam Client Update"),
+                            "url": store_url,
+                            "date": ts,
+                            "build_kl": to_kl_time_string(ts),
+                            "changelog": cl_text,
+                            "commit_info": latest_commit
+                        })
+                    new_stable_date = latest_stable_ts
+    except Exception as e:
+        logger.error(f"Error checking official Steam client news API: {e}")
+
+    # 2. Check Beta Steam Client Updates (Valve SteamClientBeta RSS)
+    STEAM_BETA_RSS_URL = "https://steamcommunity.com/groups/SteamClientBeta/rss/"
+    try:
+        res_beta = requests.get(STEAM_BETA_RSS_URL, headers=headers, timeout=12)
+        if res_beta.status_code == 200:
+            root = ET.fromstring(res_beta.text)
+            channel = root.find("channel")
+            if channel is not None:
+                items = channel.findall("item")
+                beta_items = []
+                for it in items:
+                    title_el = it.find("title")
+                    title = title_el.text.strip() if title_el is not None and title_el.text else ""
+                    if "steam client beta" in title.lower():
+                        pubdate_el = it.find("pubDate")
+                        pubdate_str = pubdate_el.text.strip() if pubdate_el is not None and pubdate_el.text else ""
+                        link_el = it.find("link")
+                        link = link_el.text.strip() if link_el is not None and link_el.text else ""
+                        desc_el = it.find("description")
+                        desc = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
+                        guid_el = it.find("guid")
+                        guid = guid_el.text.strip() if guid_el is not None and guid_el.text else link
+
+                        # Parse pubDate to Unix timestamp
+                        try:
+                            dt = datetime.strptime(pubdate_str, "%a, %d %b %Y %H:%M:%S %z")
+                            ts = int(dt.timestamp())
+                        except Exception:
+                            ts = 0
+
+                        beta_items.append({
+                            "title": title,
+                            "link": link,
+                            "date": ts,
+                            "guid": guid,
+                            "desc": desc
+                        })
+
+                if beta_items:
+                    beta_items.sort(key=lambda x: x["date"], reverse=True)
+                    latest_beta_ts = beta_items[0]["date"]
+
+                    if last_seen_beta == 0:
+                        new_beta_date = latest_beta_ts
+                    elif latest_beta_ts > last_seen_beta:
+                        for b_item in beta_items[:1]:
+                            cl_text = format_steam_changelog(b_item["desc"])
+                            new_updates.append({
+                                "channel_name": "Beta",
+                                "branch_display": "Steam Beta Branch",
+                                "version": b_item["date"],
+                                "title": b_item["title"],
+                                "url": b_item["link"],
+                                "date": b_item["date"],
+                                "build_kl": to_kl_time_string(b_item["date"]) if b_item["date"] else b_item["title"],
+                                "changelog": cl_text,
+                                "commit_info": latest_commit
+                            })
+                        new_beta_date = latest_beta_ts
+    except Exception as e:
+        logger.error(f"Error checking Steam Client Beta RSS: {e}")
+
+    return new_updates, new_stable_date, new_beta_date
+
+
 def fetch_steam_client_changelog() -> Optional[Dict[str, Any]]:
     """
-    Fetches the most recent Steam Client Update announcement from the ISteamNews API.
-    Parses the plain-text content into Discord-formatted bullet sections.
+    Fetches the most recent Steam Client Update announcement from Valve's official API.
     Returns: {"title": str, "url": str, "changelog": str} or None.
     """
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         res = requests.get(STEAM_CLIENT_NEWS_URL, headers=headers, timeout=12)
         if res.status_code != 200:
-            logger.warning(f"Steam client news API returned HTTP {res.status_code}")
             return None
-
         items = res.json().get("appnews", {}).get("newsitems", [])
-        # Find the latest entry whose title contains 'client update'
-        entry = next(
-            (i for i in items if "client update" in i.get("title", "").lower()),
-            None
-        )
+        entry = next((i for i in items if "client update" in i.get("title", "").lower()), None)
         if not entry:
             return None
 
-        raw_content = entry.get("contents", "")
-        title = entry.get("title", "Steam Client Update")
-        url = entry.get("url", "https://store.steampowered.com/news/app/593110")
-
-        # Steam client update content is a raw blob with no line breaks.
-        # We insert newlines before recognizable section headers by looking for
-        # capitalized words that appear after a period without a space (direct concatenation).
-        # Pattern: lowercase/punctuation immediately followed by an uppercase word group = section header boundary.
-        normalized = re.sub(
-            r'([a-z.)])([A-Z][a-z])',   # e.g. "downloaded.Homescreen" → "downloaded.\nHomescreen"
-            r'\1\n\2',
-            raw_content
-        )
-
-        lines = [l.strip() for l in normalized.splitlines() if l.strip()]
-
-        changelog_lines = []
-        # Known Steam section header patterns
-        section_re = re.compile(
-            r'^(General|Downloads?|Storage|Library|Family(?: Sharing)?|Chat|Overlay|VR|'
-            r'Remote Play|Broadcast|Screenshot|Controller|Steam Input|Achievement|'
-            r'Mobile App|Settings|Homescreen?|Screensaver|Client|Linux|macOS|Windows|'
-            r'Notifications?|Customization|Friends?|Community|Store)\b',
-            re.IGNORECASE
-        )
-
-        is_first = True
-        for line in lines:
-            if is_first:
-                # Skip or italicize the "A new Steam Client update has been released" preamble
-                changelog_lines.append(f"*{line}*")
-                is_first = False
-                continue
-
-            if section_re.match(line):
-                # Section header — bold it
-                changelog_lines.append(f"\n**{line}**")
-            else:
-                # Regular change item — add as bullet
-                # Break long lines at sentence boundaries
-                for sentence in re.split(r'(?<=[.!?])\s+', line):
-                    sentence = sentence.strip()
-                    if sentence and len(sentence) < 220:
-                        changelog_lines.append(f"• {sentence}")
-
-        changelog_text = "\n".join(changelog_lines).strip()
-        # Discord embed field value cap = 1024 chars
-        if len(changelog_text) > 1000:
-            changelog_text = changelog_text[:997] + "…"
-
+        gid = entry.get("gid", "")
+        url = f"https://store.steampowered.com/news/app/593110/view/{gid}" if gid else entry.get("url", "https://store.steampowered.com/news/app/593110")
         return {
-            "title": title,
+            "title": entry.get("title", "Steam Client Update"),
             "url": url,
-            "changelog": changelog_text or "*(No changelog content parsed)*"
+            "changelog": format_steam_changelog(entry.get("contents", ""))
         }
     except Exception as e:
         logger.error(f"Error fetching Steam client changelog: {e}")
         return None
 
 
-def create_steam_monitor_embed(
-    channel_name: str,
-    version: int,
-    build_kl_time: str,
-    commit_info: Optional[Dict[str, str]] = None
+def create_steam_client_embed(
+    item: Optional[Dict[str, Any]] = None,
+    channel_name: Optional[str] = None,
+    version: Optional[Any] = None,
+    build_kl_time: Optional[str] = None,
+    commit_info: Optional[Dict[str, str]] = None,
+    **kwargs
 ) -> discord.Embed:
     """
-    Builds a Discord Embed for a new Steam Client version update,
+    Builds a Discord Embed for an official Steam Client update,
     matching the layout of the official Steam 'About Steam' client window.
+    Supports both dict argument or individual keyword arguments.
     """
-    branch_display = f"{channel_name} Client" if channel_name.lower() == "stable" else f"Steam Beta Branch ({channel_name})"
-    
+    if isinstance(item, dict):
+        channel_name = item.get("channel_name", channel_name or "Stable")
+        version = item.get("version", version)
+        build_kl_time = item.get("build_kl", build_kl_time)
+        commit_info = item.get("commit_info", commit_info)
+        title = item.get("title")
+        url = item.get("url")
+        changelog = item.get("changelog")
+    else:
+        title = kwargs.get("title")
+        url = kwargs.get("url")
+        changelog = kwargs.get("changelog")
+
+    chan = str(channel_name or "Stable")
+    branch_display = "Stable Client" if chan.lower() == "stable" else f"Steam Beta Branch ({chan})"
+    embed_title = title or f"🎮 Steam Client Update ({branch_display})"
+    target_url = url or "https://store.steampowered.com/news/app/593110"
+
     embed = discord.Embed(
-        title=f"🎮 Steam Client Update ({branch_display})",
-        url=STEAM_MONITOR_REPO_URL,
+        title=embed_title,
+        url=target_url,
         color=0x1A9FFF  # Official Steam Accent Blue
     )
     embed.set_thumbnail(url=STEAM_LOGO_URL)
@@ -231,16 +359,31 @@ def create_steam_monitor_embed(
         value=f"**{branch_display}**",
         inline=True
     )
-    embed.add_field(
-        name="🔢 Steam Version",
-        value=f"`{version}`",
-        inline=True
-    )
-    embed.add_field(
-        name="🕒 Steam Client Build Date",
-        value=f"**{build_kl_time}**",
-        inline=False
-    )
+    if version:
+        embed.add_field(
+            name="🔢 Steam Version",
+            value=f"`{version}`",
+            inline=True
+        )
+    if build_kl_time:
+        embed.add_field(
+            name="🕒 Steam Client Build Date",
+            value=f"**{build_kl_time}**",
+            inline=False
+        )
+
+    # Changelog / Release notes
+    if not changelog:
+        cl_data = fetch_steam_client_changelog()
+        if cl_data:
+            changelog = cl_data.get("changelog")
+
+    if changelog:
+        embed.add_field(
+            name="📋 Official Release Notes",
+            value=changelog,
+            inline=False
+        )
 
     if commit_info and commit_info.get("title"):
         commit_title = commit_info.get("title")
@@ -248,23 +391,15 @@ def create_steam_monitor_embed(
         commit_val = f"[{commit_title}]({commit_link})" if commit_link else commit_title
         embed.add_field(name="📝 Protobuf Commit", value=commit_val, inline=False)
 
-    # Fetch and embed latest Steam Client changelog
-    changelog_data = fetch_steam_client_changelog()
-    if changelog_data:
-        cl_title = changelog_data["title"]
-        cl_url = changelog_data["url"]
-        cl_text = changelog_data["changelog"]
-        embed.add_field(
-            name=f"📋 Latest Release Notes: [{cl_title}]({cl_url})",
-            value=cl_text,
-            inline=False
-        )
-
     embed.add_field(
-        name="🌐 Monitor Source",
-        value=f"👉 **[OpenSteam001/steam-monitor (protobuf)]({STEAM_MONITOR_REPO_URL})**",
+        name="🌐 Official Steam Announcement",
+        value=f"👉 **[View Full Patch Notes on Steam Store]({target_url})**",
         inline=False
     )
 
-    embed.set_footer(text="Steam Version Monitor • GMT+8")
+    embed.set_footer(text="Steam Client Watch • Official Valve Announcement • GMT+8", icon_url=STEAM_LOGO_URL)
     return embed
+
+
+# Backwards compatibility alias
+create_steam_monitor_embed = create_steam_client_embed

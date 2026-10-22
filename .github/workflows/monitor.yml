@@ -1,9 +1,11 @@
 name: Game Release Notifier
 
+# Note: Scheduled cron is disabled to prevent duplicate postings with the active 24/7 Koyeb cloud worker.
+# Manual triggers via workflow_dispatch remain available.
+# on:
+#   schedule:
+#     - cron: '7,22,37,52 * * * *'
 on:
-  schedule:
-    # Runs every 15 minutes with offset to bypass GitHub top-of-hour queue throttling
-    - cron: '7,22,37,52 * * * *'
   workflow_dispatch: # Allows manual trigger from GitHub Actions UI or API
   repository_dispatch: # Allows external cron webhooks (e.g. cron-job.org)
     types: [run-monitor]

@@ -262,54 +262,34 @@ class ForumMonitor:
 
     def check_steam_client_version(self) -> List[Dict[str, Any]]:
         """
-        Monitors https://github.com/OpenSteam001/steam-monitor/tree/protobuf
-        for new Steam Client versions across Stable and Beta channels.
-        Returns a list of new version updates, converted to Kuala Lumpur Time.
+        Monitors official Steam Client updates directly from Valve's official sources:
+        1. Stable Client channel: Valve ISteamNews API for AppID 593110 (Steam Client).
+        2. Beta Client channel: Valve Steam Client Beta RSS announcements.
+        Returns a list of new version updates, converted to Kuala Lumpur Time (GMT+8).
         """
-        from steam_client_watcher import check_steam_monitor_protobuf
+        from steam_client_watcher import check_steam_client_updates
         client_state = self.state.setdefault("steam_client", {})
-        saved_versions = client_state.setdefault("protobuf_versions", {})
-        saved_commit = client_state.get("last_commit_id", "")
 
-        monitor_data = check_steam_monitor_protobuf()
-        channels = monitor_data.get("channels", {})
-        latest_commit = monitor_data.get("latest_commit")
+        last_seen_stable = int(client_state.get("last_seen_date_stable") or client_state.get("last_seen_date", 0))
+        last_seen_beta = int(client_state.get("last_seen_date_beta", 0))
 
-        if not channels:
-            return []
+        updates, new_stable, new_beta = check_steam_client_updates(
+            last_seen_stable=last_seen_stable,
+            last_seen_beta=last_seen_beta
+        )
 
-        # First run initialization: record current versions to state without spamming history
-        if not saved_versions:
-            logger.info("Initializing Steam Client version tracker from OpenSteam001/steam-monitor...")
-            for ch_name, info in channels.items():
-                saved_versions[ch_name] = int(info["version"])
-            if latest_commit and latest_commit.get("commit_id"):
-                client_state["last_commit_id"] = latest_commit["commit_id"]
-            self.save_state()
-            return []
+        if new_stable:
+            client_state["last_seen_date_stable"] = new_stable
+            client_state["last_seen_date"] = new_stable
+        if new_beta:
+            client_state["last_seen_date_beta"] = new_beta
 
-        new_updates = []
-        for ch_key, info in channels.items():
-            current_ver = int(info["version"])
-            previous_ver = int(saved_versions.get(ch_key, 0))
-
-            if current_ver > previous_ver:
-                logger.info(f"Detected Steam Client Update on {info['channel_name']}! Version: {current_ver} (was: {previous_ver})")
-                new_updates.append({
-                    "channel_name": info["channel_name"],
-                    "version": current_ver,
-                    "build_kl": info["build_kl"],
-                    "commit_info": latest_commit
-                })
-                saved_versions[ch_key] = current_ver
-
-        if latest_commit and latest_commit.get("commit_id"):
-            client_state["last_commit_id"] = latest_commit["commit_id"]
-
-        if new_updates:
+        if updates:
+            for upd in updates:
+                logger.info(f"Detected Steam Client Update on {upd.get('branch_display', 'Steam')}! Title: {upd.get('title')} (Date: {upd.get('date')})")
             self.save_state()
 
-        return new_updates
+        return updates
 
     def is_release_duplicate(self, topic_id: str, release_name: Optional[str]) -> bool:
         """Checks if this specific release tag was already broadcasted for this game."""

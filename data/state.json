@@ -6,6 +6,8 @@
   },
   "steam_client": {
     "last_seen_date": 1791934703,
+    "last_seen_date_stable": 1791934703,
+    "last_seen_date_beta": 1792628142,
     "protobuf_versions": {
       "stable": 1788652215,
       "beta": 1790380355
