@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import hashlib
 import logging
@@ -351,6 +352,13 @@ class ForumMonitor:
         """Checks for newly featured Steam deals and promotions with MYR prices."""
         from external_monitors import check_steam_deals
         updates = check_steam_deals(self.state)
+        self.save_state()
+        return updates
+
+    def check_onlinefix_updates(self) -> List[Dict[str, Any]]:
+        """Checks for newly published multiplayer & co-op fixes on Online-Fix.me."""
+        from external_monitors import check_onlinefix_feed
+        updates = check_onlinefix_feed(self.state)
         self.save_state()
         return updates
 

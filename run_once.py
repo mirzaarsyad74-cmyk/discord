@@ -28,7 +28,8 @@ from external_monitors import (
     create_crackwatch_embed,
     create_steamrip_embed,
     create_suo_embed,
-    create_steam_deal_embed
+    create_steam_deal_embed,
+    create_onlinefix_embed
 )
 
 # UTF-8 encoding support
@@ -66,6 +67,7 @@ def load_config() -> dict:
         "watch_fitgirl": False,
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
+        "watch_onlinefix": True,
         "watch_csrin": False,
         "enable_global_feed": False,
         "subforum_feeds": [],
@@ -259,6 +261,16 @@ def main():
                 embed = create_crackwatch_embed(upd)
                 safe_webhook_send(webhook, embed, username="Reddit CrackWatch")
                 logger.info(f"Posted r/CrackWatch: {upd['title']}")
+
+    # 8. Online-Fix.me Watcher (Signature Neon Electric Aqua Color)
+    if config.get("watch_onlinefix", True):
+        logger.info("Checking Online-Fix.me feed...")
+        of_updates = monitor.check_onlinefix_updates()
+        if of_updates:
+            for upd in of_updates:
+                embed = create_onlinefix_embed(upd)
+                safe_webhook_send(webhook, embed, username="Online-Fix.me")
+                logger.info(f"Posted Online-Fix: {upd['title']}")
 
     logger.info("Single-run execution finished successfully!")
 

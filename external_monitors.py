@@ -25,14 +25,16 @@ SUO_DIRECT_IP_URL = "https://34.158.47.50/api/onennabe"
 FITGIRL_FEED_URL = "https://fitgirl-repacks.site/feed/"
 DODI_FEED_URL = "https://dodi-repacks.site/feed/"
 CRACKWATCH_RSS_URL = "https://www.reddit.com/r/CrackWatch/new/.rss"
+ONLINEFIX_RSS_URL = "https://online-fix.me/rss.xml"
 
-# Brand Colors
-COLOR_STEAMRIP = 0x6C5CE7    # Royal Indigo / Vivid Violet
-COLOR_SUO = 0x1A9FFF         # Electric Steam Cyan / Blue
-COLOR_FITGIRL = 0xFF1493     # Deep Pink / Magenta
-COLOR_DODI = 0x10AC84        # Emerald / Mint Green
-COLOR_CRACKWATCH = 0xFF4500  # Reddit Vibrant Orange-Red
-COLOR_STEAM_DEAL = 0x2A475E  # Steam Navy / Highlight Blue
+# Brand Colors (Distinct spectrum - zero similar colors)
+COLOR_STEAMRIP = 0x8B5CF6    # Vivid Royal Violet / Purple
+COLOR_SUO = 0xF59E0B         # Cyber Amber Gold / Key Yellow
+COLOR_FITGIRL = 0xFF1493     # Neon Magenta / Deep Pink
+COLOR_DODI = 0x10B981        # Emerald / Forest Green
+COLOR_CRACKWATCH = 0xFF5722  # Reddit Vibrant Flame Orange
+COLOR_STEAM_DEAL = 0xE11D48  # Steam Sale Crimson / Discount Red
+COLOR_ONLINEFIX = 0x00E5FF   # Neon Electric Aqua / Cyan
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
 SUO_ICON = "https://raw.githubusercontent.com/ZackTheGrumpy/Website/refs/heads/main/logo.ico"
@@ -40,6 +42,7 @@ FITGIRL_ICON = "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-
 DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2021/04/cropped-cropped-DODI-Repacks-Site-Icon-192x192.png"
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
 STEAM_DEAL_ICON = "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png"
+ONLINEFIX_ICON = "https://online-fix.me/favicon.ico"
 
 SUO_GENRE_MAP = {
     0: "Unknown Genre",
@@ -454,6 +457,159 @@ def create_crackwatch_embed(item: Dict[str, Any]):
         inline=False
     )
     embed.set_footer(text="Reddit r/CrackWatch Monitor • GMT+8")
+    return embed
+
+
+def clean_and_translate_onlinefix(title: str, category: str, desc_html: str):
+    """
+    Cleans and translates Online-Fix.me Russian templates into crisp English.
+    """
+    # 1. Title translation & cleaning
+    clean_title = re.sub(r'(?i)\s*по\s+сети\b', ' [Online / Co-op Fix]', title).strip()
+    clean_title = re.sub(r'(?i)обновлено\s+до\s+версии', 'Updated to v', clean_title)
+    clean_title = re.sub(r'(?i)обновлен[оа]?\b', 'Updated', clean_title)
+    clean_title = re.sub(r'(?i)фикс\s+обновлен', 'Fix Updated', clean_title)
+
+    # 2. Category translation
+    cat_map = {
+        'Приключения': 'Adventure', 'Экшен': 'Action', 'Гонки': 'Racing',
+        'Симуляторы': 'Simulator', 'Стратегии': 'Strategy', 'Ужасы': 'Horror',
+        'Выживание': 'Survival', 'Шутеры': 'Shooter', 'Ролевые': 'RPG',
+        'Руководства запуска': 'Multiplayer Launch Guide'
+    }
+    cats = [c.strip() for c in category.split(',') if c.strip()]
+    en_cats = [cat_map.get(c, c) for c in cats]
+    category_str = ', '.join(en_cats) if en_cats else 'Multiplayer Game Fix'
+
+    # 3. Platform / Network
+    desc_lower = desc_html.lower()
+    if 'steam' in desc_lower:
+        play_via = 'Steam (Spacewar / Steamworks)'
+    elif 'epic' in desc_lower:
+        play_via = 'Epic Games'
+    elif 'lan' in desc_lower:
+        play_via = 'LAN / Emulators'
+    else:
+        play_via = 'Steam / Online-Fix Network'
+
+    # 4. Modes supported
+    has_coop = 'fa-check' in desc_html and ('Кооператив' in desc_html or 'Cooperative' in desc_html or 'кооп' in desc_lower)
+    has_multi = 'fa-check' in desc_html and ('Мультиплеер' in desc_html or 'Multiplayer' in desc_html)
+
+    modes = []
+    if has_coop:
+        modes.append('✅ Co-op Supported')
+    if has_multi:
+        modes.append('✅ Multiplayer PvP')
+    if not modes:
+        modes = ['✅ Online Co-op / Multiplayer']
+    modes_str = ' • '.join(modes)
+
+    return clean_title, category_str, play_via, modes_str
+
+
+def check_onlinefix_feed(state: dict) -> List[Dict[str, Any]]:
+    """
+    Checks for newly published multiplayer & co-op fixes on Online-Fix.me.
+    Translates Russian descriptions and tags into English.
+    Uses strict FIFO ordered tracking to prevent duplicate postings.
+    """
+    of_state = state.setdefault("onlinefix", {})
+    seen_links = set(str(x) for x in of_state.get("seen_links", []))
+
+    try:
+        import xml.etree.ElementTree as ET
+        res = requests.get(
+            ONLINEFIX_RSS_URL,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+            timeout=10
+        )
+        if res.status_code != 200:
+            logger.warning(f"Failed to fetch Online-Fix.me RSS: HTTP {res.status_code}")
+            return []
+
+        root = ET.fromstring(res.content)
+        channel = root.find("channel")
+        if channel is None:
+            return []
+        items = channel.findall("item")
+        if not items:
+            return []
+
+        # First run initialization: record current entries so we don't spam history
+        if not seen_links:
+            logger.info(f"Initializing Online-Fix.me tracker with {len(items)} current items...")
+            init_links = []
+            for it in items:
+                link_el = it.find("link")
+                if link_el is not None and link_el.text:
+                    init_links.append(link_el.text.strip())
+            of_state["seen_links"] = update_seen_list([], init_links, max_len=500)
+            return []
+
+        new_items = []
+        newly_seen_links = []
+        for it in items:
+            link_el = it.find("link")
+            link = link_el.text.strip() if (link_el is not None and link_el.text) else ""
+            if not link or link in seen_links:
+                continue
+
+            raw_title = it.find("title").text if it.find("title") is not None else "Online-Fix Game"
+            raw_category = it.find("category").text if it.find("category") is not None else ""
+            raw_desc = it.find("description").text if it.find("description") is not None else ""
+            pub_date = it.find("pubDate").text if it.find("pubDate") is not None else ""
+
+            clean_title, category_en, play_via, modes_en = clean_and_translate_onlinefix(
+                raw_title, raw_category, raw_desc
+            )
+            time_kl = parse_pubdate_to_kl(pub_date)
+
+            new_items.append({
+                "source": "Online-Fix.me",
+                "title": clean_title,
+                "raw_title": raw_title,
+                "link": link,
+                "category": category_en,
+                "network": play_via,
+                "modes": modes_en,
+                "time_kl": time_kl
+            })
+            seen_links.add(link)
+            newly_seen_links.append(link)
+
+        if newly_seen_links:
+            of_state["seen_links"] = update_seen_list(of_state.get("seen_links", []), newly_seen_links, max_len=500)
+
+        return list(reversed(new_items))
+
+    except Exception as e:
+        logger.error(f"Error checking Online-Fix feed: {e}")
+        return []
+
+
+def create_onlinefix_embed(item: Dict[str, Any]):
+    """Builds a Discord Embed for a new Online-Fix.me release with signature Teal/Cyan color."""
+    import discord
+    title = item["title"]
+
+    embed = discord.Embed(
+        title=f"🎮 [Online-Fix] {title}",
+        url=item["link"],
+        color=COLOR_ONLINEFIX
+    )
+    embed.set_thumbnail(url=ONLINEFIX_ICON)
+    embed.add_field(name="📦 Game Release / Fix", value=f"**{title}**", inline=False)
+    embed.add_field(name="🌐 Multiplayer Network", value=f"`{item.get('network', 'Steam (Spacewar)')}`", inline=True)
+    embed.add_field(name="👥 Supported Modes", value=f"`{item.get('modes', 'Co-op')}`", inline=True)
+    embed.add_field(name="📂 Category", value=f"**{item.get('category', 'Multiplayer Fix')}**", inline=True)
+    embed.add_field(name="🕒 Release Time (GMT+8)", value=item["time_kl"], inline=True)
+    embed.add_field(
+        name="🔗 Fix & Installation Guide",
+        value=f"👉 **[Open Online-Fix.me Page]({item['link']})**",
+        inline=False
+    )
+    embed.set_footer(text="Online-Fix.me Monitor • Multiplayer & Co-op Fixes • GMT+8", icon_url=ONLINEFIX_ICON)
     return embed
 
 

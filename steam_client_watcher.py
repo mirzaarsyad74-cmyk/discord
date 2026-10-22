@@ -381,7 +381,7 @@ def create_steam_client_embed(
     embed = discord.Embed(
         title=embed_title,
         url=target_url,
-        color=0x1A9FFF  # Official Steam Accent Blue
+        color=0x0078D4  # Valve Steam Sapphire Blue
     )
     embed.set_thumbnail(url=STEAM_LOGO_URL)
 
