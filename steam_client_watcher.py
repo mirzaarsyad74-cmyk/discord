@@ -166,6 +166,29 @@ def format_steam_changelog(raw_text: str) -> str:
     return changelog_text or "*(No release notes provided)*"
 
 
+STEAM_MANIFEST_STABLE_URL = "https://client-update.fastly.steamstatic.com/steam_client_win64"
+STEAM_MANIFEST_BETA_URL = "https://client-update.fastly.steamstatic.com/steam_client_publicbeta_win64"
+
+
+def get_steam_manifest_version(channel: str = "stable") -> Optional[int]:
+    """
+    Fetches the exact Steam Version (binary build timestamp) directly from Valve's official CDN manifest.
+    This matches the exact version number displayed in the 'About Steam' client window.
+    """
+    url = STEAM_MANIFEST_STABLE_URL if channel.lower() == "stable" else STEAM_MANIFEST_BETA_URL
+    try:
+        res = requests.get(url, headers={"User-Agent": "Valve/Steam HTTP Client 1.0"}, timeout=6)
+        if res.status_code == 200:
+            for line in res.text.splitlines():
+                if "version" in line:
+                    parts = line.split('"')
+                    if len(parts) >= 4 and parts[3].isdigit():
+                        return int(parts[3])
+    except Exception as e:
+        logger.debug(f"Could not read Steam client manifest version: {e}")
+    return None
+
+
 def check_steam_client_updates(
     last_seen_stable: int = 0,
     last_seen_beta: int = 0
@@ -209,14 +232,19 @@ def check_steam_client_updates(
                         gid = item.get("gid", "")
                         store_url = f"https://store.steampowered.com/news/app/593110/view/{gid}" if gid else item.get("url", "https://store.steampowered.com/news/app/593110")
                         cl_text = format_steam_changelog(item.get("contents", ""))
+                        
+                        # Query official CDN manifest for exact client build version (matches 'About Steam')
+                        manifest_ver = get_steam_manifest_version("stable")
+                        build_ver = manifest_ver if manifest_ver else ts
+
                         new_updates.append({
                             "channel_name": "Stable",
                             "branch_display": "Stable Client",
-                            "version": ts,
+                            "version": build_ver,
                             "title": item.get("title", "Steam Client Update"),
                             "url": store_url,
                             "date": ts,
-                            "build_kl": to_kl_time_string(ts),
+                            "build_kl": to_kl_time_string(build_ver),
                             "changelog": cl_text,
                             "commit_info": latest_commit
                         })
@@ -271,14 +299,17 @@ def check_steam_client_updates(
                     elif latest_beta_ts > last_seen_beta:
                         for b_item in beta_items[:1]:
                             cl_text = format_steam_changelog(b_item["desc"])
+                            manifest_ver_beta = get_steam_manifest_version("beta")
+                            build_ver_beta = manifest_ver_beta if manifest_ver_beta else b_item["date"]
+
                             new_updates.append({
                                 "channel_name": "Beta",
                                 "branch_display": "Steam Beta Branch",
-                                "version": b_item["date"],
+                                "version": build_ver_beta,
                                 "title": b_item["title"],
                                 "url": b_item["link"],
                                 "date": b_item["date"],
-                                "build_kl": to_kl_time_string(b_item["date"]) if b_item["date"] else b_item["title"],
+                                "build_kl": to_kl_time_string(build_ver_beta),
                                 "changelog": cl_text,
                                 "commit_info": latest_commit
                             })
