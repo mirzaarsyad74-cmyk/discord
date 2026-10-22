@@ -26,6 +26,7 @@ FITGIRL_FEED_URL = "https://fitgirl-repacks.site/feed/"
 DODI_FEED_URL = "https://dodi-repacks.site/feed/"
 CRACKWATCH_RSS_URL = "https://www.reddit.com/r/CrackWatch/new/.rss"
 ONLINEFIX_RSS_URL = "https://online-fix.me/rss.xml"
+ONLINEFIX_TG_URL = "https://t.me/s/onlinefix"
 WEMOD_FEED_URL = "https://community.wemod.com/u/system/activity.rss"
 
 # Brand Colors (Distinct spectrum - zero similar colors)
@@ -130,7 +131,7 @@ def parse_pubdate_to_kl(date_str: str) -> str:
     return f"`{date_str} GMT+8`"
 
 
-def fetch_web_content(url: str, headers: dict = None, timeout: int = 8) -> Optional[str]:
+def fetch_web_content(url: str, headers: dict = None, timeout: int = 8, silent_fail: bool = False) -> Optional[str]:
     """Fetches web content using curl_cffi (impersonating Chrome) with fallback to requests."""
     req_headers = headers or STANDARD_HEADERS
     if cffi_requests:
@@ -138,7 +139,8 @@ def fetch_web_content(url: str, headers: dict = None, timeout: int = 8) -> Optio
             r = cffi_requests.get(url, impersonate="chrome120", timeout=timeout)
             if r.status_code == 200:
                 return r.text
-            logger.warning(f"curl_cffi fetch {url} returned HTTP {r.status_code}")
+            if not silent_fail:
+                logger.warning(f"curl_cffi fetch {url} returned HTTP {r.status_code}")
         except Exception as e:
             logger.debug(f"curl_cffi failed for {url}: {e}, falling back to requests")
 
@@ -146,10 +148,12 @@ def fetch_web_content(url: str, headers: dict = None, timeout: int = 8) -> Optio
         r = requests.get(url, headers=req_headers, timeout=timeout)
         if r.status_code == 200:
             return r.text
-        logger.warning(f"requests fetch {url} returned HTTP {r.status_code}")
+        if not silent_fail:
+            logger.warning(f"requests fetch {url} returned HTTP {r.status_code}")
         return None
     except Exception as e:
-        logger.warning(f"Notice: Could not reach {url} (cloud datacenter filtered): {e}")
+        if not silent_fail:
+            logger.warning(f"Notice: Could not reach {url} (cloud datacenter filtered): {e}")
         return None
 
 
@@ -519,39 +523,22 @@ def clean_and_translate_onlinefix(title: str, category: str, desc_html: str):
 def check_onlinefix_feed(state: dict) -> List[Dict[str, Any]]:
     """
     Checks for newly published multiplayer & co-op fixes on Online-Fix.me.
+    Supports official RSS feed with automatic seamless fallback to official Telegram real-time broadcast mirror (https://t.me/s/onlinefix)
+    to bypass Cloudflare 403 datacenter blocking on cloud hosts like Koyeb.
     Translates Russian descriptions and tags into English.
     Uses strict FIFO ordered tracking to prevent duplicate postings.
     """
     of_state = state.setdefault("onlinefix", {})
     seen_links = set(str(x) for x in of_state.get("seen_links", []))
 
-    try:
+    def parse_rss_items(xml_text: str) -> List[Dict[str, Any]]:
         import html
-        xml_text = fetch_web_content(ONLINEFIX_RSS_URL, timeout=12)
-        if not xml_text:
-            return []
-
-        items = re.findall(r'<item>(.*?)</item>', xml_text, re.DOTALL)
-        if not items:
-            return []
-
-        # First run initialization: record current entries so we don't spam history
-        if not seen_links:
-            logger.info(f"Initializing Online-Fix.me tracker with {len(items)} current items...")
-            init_links = []
-            for it in items:
-                l_m = re.search(r'<link>(.*?)</link>', it)
-                if l_m and l_m.group(1).strip():
-                    init_links.append(l_m.group(1).strip())
-            of_state["seen_links"] = update_seen_list([], init_links, max_len=500)
-            return []
-
-        new_items = []
-        newly_seen_links = []
-        for it in items:
+        raw_blocks = re.findall(r'<item>(.*?)</item>', xml_text, re.DOTALL)
+        parsed_entries = []
+        for it in raw_blocks:
             l_m = re.search(r'<link>(.*?)</link>', it)
             link = l_m.group(1).strip() if l_m else ""
-            if not link or link in seen_links:
+            if not link:
                 continue
 
             t_m = re.search(r'<title>(.*?)</title>', it)
@@ -561,7 +548,7 @@ def check_onlinefix_feed(state: dict) -> List[Dict[str, Any]]:
             raw_category = html.unescape(c_m.group(1).strip()) if c_m else ""
 
             d_m = re.search(r'<description>(.*?)</description>', it, re.DOTALL)
-            raw_desc = d_m.group(1).strip() if d_m else ""
+            raw_desc = d_m.group(1) if d_m else ""
 
             p_m = re.search(r'<pubdate>(.*?)</pubdate>', it, re.IGNORECASE)
             pub_date = p_m.group(1).strip() if p_m else ""
@@ -571,7 +558,7 @@ def check_onlinefix_feed(state: dict) -> List[Dict[str, Any]]:
             )
             time_kl = parse_pubdate_to_kl(pub_date)
 
-            new_items.append({
+            parsed_entries.append({
                 "source": "Online-Fix.me",
                 "title": clean_title,
                 "raw_title": raw_title,
@@ -581,6 +568,82 @@ def check_onlinefix_feed(state: dict) -> List[Dict[str, Any]]:
                 "modes": modes_en,
                 "time_kl": time_kl
             })
+        return parsed_entries
+
+    def parse_telegram_items(html_text: str) -> List[Dict[str, Any]]:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_text, "html.parser")
+        msg_divs = soup.select(".tgme_widget_message")
+        parsed_entries = []
+        for div in msg_divs:
+            text_el = div.select_one(".tgme_widget_message_text")
+            time_el = div.select_one("time")
+            link_el = div.select_one("a[href*='online-fix.me']")
+            if not text_el or not link_el:
+                continue
+
+            link = link_el.get("href", "").strip()
+            dt = time_el.get("datetime", "").strip() if time_el else ""
+            raw_text = text_el.get_text(separator="\n", strip=True)
+
+            first_line = raw_text.split("\n")[0].strip()
+            clean_raw = re.sub(r'^(Обновлено|Новое|Добавлено)\s+руководство\s+на\s+сайте\s*-\s*', '', first_line)
+
+            cat_m = re.search(r'/games/([^/]+)/', link)
+            cat_slug = cat_m.group(1).capitalize() if cat_m else "Multiplayer"
+
+            clean_title, category_en, play_via, modes_en = clean_and_translate_onlinefix(
+                clean_raw, cat_slug, raw_text
+            )
+            time_kl = parse_pubdate_to_kl(dt)
+
+            parsed_entries.append({
+                "source": "Online-Fix.me",
+                "title": clean_title,
+                "raw_title": first_line,
+                "link": link,
+                "category": category_en,
+                "network": play_via,
+                "modes": modes_en,
+                "time_kl": time_kl
+            })
+        return parsed_entries
+
+    try:
+        entries = []
+        # Try direct RSS first with silent_fail=True if not flagged as datacenter blocked
+        if not of_state.get("cf_blocked", False):
+            xml_text = fetch_web_content(ONLINEFIX_RSS_URL, timeout=8, silent_fail=True)
+            if xml_text:
+                entries = parse_rss_items(xml_text)
+            else:
+                of_state["cf_blocked"] = True
+                logger.info("Online-Fix.me RSS blocked by Cloudflare (HTTP 403 on cloud datacenter). Using official real-time Telegram mirror (https://t.me/s/onlinefix)...")
+
+        # Fallback to official Telegram real-time broadcast mirror (unblocked globally)
+        if not entries:
+            tg_html = fetch_web_content(ONLINEFIX_TG_URL, timeout=10)
+            if tg_html:
+                entries = parse_telegram_items(tg_html)
+
+        if not entries:
+            return []
+
+        # First run initialization: record current entries so we don't spam history
+        if not seen_links:
+            logger.info(f"Initializing Online-Fix.me tracker with {len(entries)} current items...")
+            init_links = [e["link"] for e in entries if e.get("link")]
+            of_state["seen_links"] = update_seen_list([], init_links, max_len=500)
+            return []
+
+        new_items = []
+        newly_seen_links = []
+        for it in entries:
+            link = it.get("link")
+            if not link or link in seen_links:
+                continue
+
+            new_items.append(it)
             seen_links.add(link)
             newly_seen_links.append(link)
 
