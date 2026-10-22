@@ -464,6 +464,11 @@ def clean_and_translate_onlinefix(title: str, category: str, desc_html: str):
     """
     Cleans and translates Online-Fix.me Russian templates into crisp English.
     """
+    # Strip CDATA tags if present
+    title = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', title or '', flags=re.DOTALL).strip()
+    category = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', category or '', flags=re.DOTALL).strip()
+    desc_html = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', desc_html or '', flags=re.DOTALL).strip()
+
     # 1. Title translation & cleaning
     clean_title = re.sub(r'(?i)\s*по\s+сети\b', ' [Online / Co-op Fix]', title).strip()
     clean_title = re.sub(r'(?i)обновлено\s+до\s+версии', 'Updated to v', clean_title)
@@ -518,21 +523,12 @@ def check_onlinefix_feed(state: dict) -> List[Dict[str, Any]]:
     seen_links = set(str(x) for x in of_state.get("seen_links", []))
 
     try:
-        import xml.etree.ElementTree as ET
-        res = requests.get(
-            ONLINEFIX_RSS_URL,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
-            timeout=10
-        )
-        if res.status_code != 200:
-            logger.warning(f"Failed to fetch Online-Fix.me RSS: HTTP {res.status_code}")
+        import html
+        xml_text = fetch_web_content(ONLINEFIX_RSS_URL, timeout=12)
+        if not xml_text:
             return []
 
-        root = ET.fromstring(res.content)
-        channel = root.find("channel")
-        if channel is None:
-            return []
-        items = channel.findall("item")
+        items = re.findall(r'<item>(.*?)</item>', xml_text, re.DOTALL)
         if not items:
             return []
 
@@ -541,24 +537,31 @@ def check_onlinefix_feed(state: dict) -> List[Dict[str, Any]]:
             logger.info(f"Initializing Online-Fix.me tracker with {len(items)} current items...")
             init_links = []
             for it in items:
-                link_el = it.find("link")
-                if link_el is not None and link_el.text:
-                    init_links.append(link_el.text.strip())
+                l_m = re.search(r'<link>(.*?)</link>', it)
+                if l_m and l_m.group(1).strip():
+                    init_links.append(l_m.group(1).strip())
             of_state["seen_links"] = update_seen_list([], init_links, max_len=500)
             return []
 
         new_items = []
         newly_seen_links = []
         for it in items:
-            link_el = it.find("link")
-            link = link_el.text.strip() if (link_el is not None and link_el.text) else ""
+            l_m = re.search(r'<link>(.*?)</link>', it)
+            link = l_m.group(1).strip() if l_m else ""
             if not link or link in seen_links:
                 continue
 
-            raw_title = it.find("title").text if it.find("title") is not None else "Online-Fix Game"
-            raw_category = it.find("category").text if it.find("category") is not None else ""
-            raw_desc = it.find("description").text if it.find("description") is not None else ""
-            pub_date = it.find("pubDate").text if it.find("pubDate") is not None else ""
+            t_m = re.search(r'<title>(.*?)</title>', it)
+            raw_title = html.unescape(t_m.group(1).strip()) if t_m else "Online-Fix Game"
+
+            c_m = re.search(r'<category>(.*?)</category>', it)
+            raw_category = html.unescape(c_m.group(1).strip()) if c_m else ""
+
+            d_m = re.search(r'<description>(.*?)</description>', it, re.DOTALL)
+            raw_desc = d_m.group(1).strip() if d_m else ""
+
+            p_m = re.search(r'<pubdate>(.*?)</pubdate>', it, re.IGNORECASE)
+            pub_date = p_m.group(1).strip() if p_m else ""
 
             clean_title, category_en, play_via, modes_en = clean_and_translate_onlinefix(
                 raw_title, raw_category, raw_desc
