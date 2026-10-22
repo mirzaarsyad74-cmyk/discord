@@ -362,6 +362,14 @@ class ForumMonitor:
         self.save_state()
         return updates
 
+    def check_wemod_updates(self) -> List[Dict[str, Any]]:
+        """Checks for newly released game trainers and cheat updates from WeMod / Wand."""
+        from external_monitors import check_wemod_feed
+        updates = check_wemod_feed(self.state)
+        self.save_state()
+        return updates
+
+
 
     def remove_topic(self, topic_id: str):
         topic_id = self.scraper.extract_topic_id(topic_id)

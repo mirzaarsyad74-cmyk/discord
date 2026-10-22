@@ -26,6 +26,7 @@ FITGIRL_FEED_URL = "https://fitgirl-repacks.site/feed/"
 DODI_FEED_URL = "https://dodi-repacks.site/feed/"
 CRACKWATCH_RSS_URL = "https://www.reddit.com/r/CrackWatch/new/.rss"
 ONLINEFIX_RSS_URL = "https://online-fix.me/rss.xml"
+WEMOD_FEED_URL = "https://community.wemod.com/u/system/activity.rss"
 
 # Brand Colors (Distinct spectrum - zero similar colors)
 COLOR_STEAMRIP = 0x8B5CF6    # Vivid Royal Violet / Purple
@@ -35,6 +36,7 @@ COLOR_DODI = 0x10B981        # Emerald / Forest Green
 COLOR_CRACKWATCH = 0xFF5722  # Reddit Vibrant Flame Orange
 COLOR_STEAM_DEAL = 0xE11D48  # Steam Sale Crimson / Discount Red
 COLOR_ONLINEFIX = 0x00E5FF   # Neon Electric Aqua / Cyan
+COLOR_WEMOD = 0x6366F1       # Electric Iris / Wand Indigo
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
 SUO_ICON = "https://raw.githubusercontent.com/ZackTheGrumpy/Website/refs/heads/main/logo.ico"
@@ -43,6 +45,7 @@ DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2021/04/cropped-croppe
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
 STEAM_DEAL_ICON = "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png"
 ONLINEFIX_ICON = "https://online-fix.me/favicon.ico"
+WEMOD_ICON = "https://www.wemod.com/static/images/device-icons/favicon-0b9e908694.ico"
 
 SUO_GENRE_MAP = {
     0: "Unknown Genre",
@@ -613,6 +616,253 @@ def create_onlinefix_embed(item: Dict[str, Any]):
         inline=False
     )
     embed.set_footer(text="Online-Fix.me Monitor • Multiplayer & Co-op Fixes • GMT+8", icon_url=ONLINEFIX_ICON)
+    return embed
+
+
+def check_wemod_feed(state: dict) -> List[Dict[str, Any]]:
+    """
+    Checks for newly released game trainers and trainer cheat updates from WeMod / Wand.
+    Parses Discourse official activity RSS feed: https://community.wemod.com/u/system/activity.rss
+    Extracts game title, target gaming platform (Steam, Xbox, Epic, GOG, etc.),
+    detailed cheats/changes bullets, and game thumbnail image.
+    Uses strict FIFO ordered tracking to prevent duplicate postings.
+    """
+    wemod_state = state.setdefault("wemod", {})
+    seen_links = set(str(x) for x in wemod_state.get("seen_links", []))
+    meta_cache = wemod_state.setdefault("meta", {})
+
+    try:
+        import html
+        xml_text = fetch_web_content(WEMOD_FEED_URL, timeout=12)
+        if not xml_text:
+            return []
+
+        items = re.findall(r'<item>(.*?)</item>', xml_text, re.DOTALL)
+        if not items:
+            return []
+
+        # Pass 1: Build local meta cache from any item that has thumbnail and cheats URL
+        for it in items:
+            l_m = re.search(r'<link>(.*?)</link>', it)
+            link = l_m.group(1).strip() if l_m else ""
+            top_m = re.search(r'/t/[^/]+/(\d+)', link)
+            if not top_m:
+                continue
+            top_id = top_m.group(1)
+
+            d_m = re.search(r'<description>(.*?)</description>', it, re.DOTALL)
+            raw_desc = d_m.group(1) if d_m else ""
+            desc_clean = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_desc, flags=re.DOTALL)
+
+            img = re.search(r'<img\s+[^>]*src=["\'](https://api-cdn\.wemod\.com/title_thumbnails/[^"\']+)["\']', desc_clean)
+            wemod_u = re.search(r'href=["\'](https://www\.wemod\.com/cheats/[^"\']+)["\']', desc_clean)
+            if img or wemod_u:
+                entry = meta_cache.setdefault(top_id, {})
+                if img:
+                    entry["thumbnail"] = img.group(1)
+                if wemod_u:
+                    entry["wemod_url"] = wemod_u.group(1)
+
+        # First-run initialization: record current entries so we don't spam historical items
+        if not seen_links:
+            logger.info(f"Initializing WeMod/Wand trainer tracker with {len(items)} current items...")
+            init_links = []
+            for it in items:
+                l_m = re.search(r'<link>(.*?)</link>', it)
+                if l_m and l_m.group(1).strip():
+                    init_links.append(l_m.group(1).strip())
+            wemod_state["seen_links"] = update_seen_list([], init_links, max_len=600)
+            return []
+
+        new_items = []
+        newly_seen_links = []
+        batch_seen_actions = set()
+
+        for it in items:
+            l_m = re.search(r'<link>(.*?)</link>', it)
+            link = l_m.group(1).strip() if l_m else ""
+            if not link or link in seen_links:
+                continue
+
+            top_m = re.search(r'/t/[^/]+/(\d+)', link)
+            top_id = top_m.group(1) if top_m else ""
+
+            t_m = re.search(r'<title>(.*?)</title>', it)
+            raw_title = html.unescape(t_m.group(1).strip()) if t_m else "WeMod Trainer"
+
+            d_m = re.search(r'<description>(.*?)</description>', it, re.DOTALL)
+            raw_desc = d_m.group(1) if d_m else ""
+            desc_clean = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_desc, flags=re.DOTALL)
+
+            p_m = re.search(r'<pubdate>(.*?)</pubdate>', it, re.IGNORECASE)
+            pub_date = p_m.group(1).strip() if p_m else ""
+            time_kl = parse_pubdate_to_kl(pub_date)
+
+            # Extract game name and platform
+            # Example title: ForgeTax Cheats and Trainer for Steam
+            m = re.match(r'^(.*?)\s+Cheats and Trainer for\s+(.*)$', raw_title, re.IGNORECASE)
+            if m:
+                game_name = m.group(1).strip()
+                platform = m.group(2).strip()
+            else:
+                game_name = raw_title
+                platform = "PC"
+
+            changes = re.findall(r'<li>(.*?)</li>', desc_clean, re.DOTALL)
+            cleaned_changes = [re.sub(r'<.*?>', '', c).strip() for c in changes]
+            cleaned_changes = [c for c in cleaned_changes if c]
+
+            # Determine action type
+            is_release = any("released trainer" in c.lower() for c in cleaned_changes)
+            is_update = "cheats have been updated" in desc_clean.lower() or any("cheat added" in c.lower() or "cheats updated" in c.lower() for c in cleaned_changes)
+
+            if is_release:
+                action_type = "✨ New Trainer Release"
+            elif is_update:
+                action_type = "🔄 Trainer Updated"
+            else:
+                # Mark in-development / non-release topics as seen so we don't re-scan them, but don't notify
+                seen_links.add(link)
+                newly_seen_links.append(link)
+                continue
+
+            # Deduplicate multiple posts within this cycle for the same topic & action
+            action_key = f"{top_id}:{action_type}"
+            if action_key in batch_seen_actions:
+                seen_links.add(link)
+                newly_seen_links.append(link)
+                continue
+            batch_seen_actions.add(action_key)
+
+            # Retrieve or fetch metadata (thumbnail and cheats page URL)
+            meta = meta_cache.get(top_id, {})
+            thumbnail = meta.get("thumbnail")
+            wemod_url = meta.get("wemod_url")
+
+            # If thumbnail or wemod_url not yet in cache, fetch topic JSON once
+            if (not thumbnail or not wemod_url) and top_id:
+                try:
+                    import json
+                    topic_json_url = f"https://community.wemod.com/t/{top_id}.json"
+                    json_str = fetch_web_content(topic_json_url, timeout=4)
+                    if json_str:
+                        t_data = json.loads(json_str)
+                        posts = t_data.get("post_stream", {}).get("posts", [])
+                        if posts:
+                            post0_html = posts[0].get("cooked", "")
+                            img_m = re.search(r'https://api-cdn\.wemod\.com/title_thumbnails/[^ "\']+', post0_html)
+                            if img_m and not thumbnail:
+                                thumbnail = img_m.group(0)
+                            wm_m = re.search(r'https://www\.wemod\.com/cheats/[^ "\']+', post0_html)
+                            if wm_m and not wemod_url:
+                                wemod_url = wm_m.group(0)
+                            meta_cache[top_id] = {
+                                "thumbnail": thumbnail,
+                                "wemod_url": wemod_url
+                            }
+                except Exception as ex:
+                    logger.debug(f"Could not fetch topic JSON for {top_id}: {ex}")
+
+            if not wemod_url:
+                wemod_url = link
+
+            new_items.append({
+                "source": "WeMod / Wand",
+                "game_name": game_name,
+                "platform": platform,
+                "action_type": action_type,
+                "topic_id": top_id,
+                "topic_url": link,
+                "wemod_url": wemod_url,
+                "thumbnail": thumbnail,
+                "changes": cleaned_changes,
+                "time_kl": time_kl
+            })
+            seen_links.add(link)
+            newly_seen_links.append(link)
+
+        if newly_seen_links:
+            wemod_state["seen_links"] = update_seen_list(wemod_state.get("seen_links", []), newly_seen_links, max_len=600)
+            # Prune meta cache if it gets excessively large
+            if len(meta_cache) > 800:
+                keys = list(meta_cache.keys())
+                for k in keys[:-600]:
+                    del meta_cache[k]
+
+        return list(reversed(new_items))
+
+    except Exception as e:
+        logger.error(f"Error checking WeMod feed: {e}")
+        return []
+
+
+def create_wemod_embed(item: Dict[str, Any]):
+    """Builds a Discord Embed for a new WeMod trainer release or update with signature Wand Indigo/Electric Iris color."""
+    import discord
+    game_name = item["game_name"]
+    platform = item.get("platform", "PC")
+    action_type = item.get("action_type", "✨ New Trainer Release")
+    is_release = "Release" in action_type
+
+    plat_lower = platform.lower()
+    if "steam" in plat_lower:
+        plat_badge = "🪟 Steam"
+    elif "xbox" in plat_lower or "microsoft" in plat_lower:
+        plat_badge = "🎮 Xbox / Windows Store"
+    elif "epic" in plat_lower:
+        plat_badge = "⚡ Epic Games"
+    elif "gog" in plat_lower:
+        plat_badge = "🔮 GOG"
+    elif "ea" in plat_lower or "origin" in plat_lower:
+        plat_badge = "🟠 EA app"
+    elif "ubisoft" in plat_lower:
+        plat_badge = "🌀 Ubisoft Connect"
+    else:
+        plat_badge = f"💻 {platform}"
+
+    title_prefix = "✨ [WeMod Trainer Release]" if is_release else "🔄 [WeMod Trainer Updated]"
+    embed_title = f"{title_prefix} {game_name}"
+
+    wemod_url = item.get("wemod_url") or item.get("topic_url", "https://www.wemod.com")
+    topic_url = item.get("topic_url") or wemod_url
+
+    embed = discord.Embed(
+        title=embed_title,
+        url=wemod_url,
+        color=COLOR_WEMOD
+    )
+
+    if item.get("thumbnail"):
+        embed.set_thumbnail(url=item["thumbnail"])
+    else:
+        embed.set_thumbnail(url=WEMOD_ICON)
+
+    embed.add_field(name="🎮 Game Title", value=f"**[{game_name}]({wemod_url})**", inline=False)
+    embed.add_field(name="💻 Platform", value=plat_badge, inline=True)
+    embed.add_field(name="🏷️ Event Type", value=f"**{action_type}**", inline=True)
+    embed.add_field(name="🕒 Time (GMT+8)", value=item.get("time_kl", "N/A"), inline=True)
+
+    changes = item.get("changes", [])
+    if changes:
+        display_bullets = []
+        for c in changes[:6]:
+            clean_c = " ".join(c.split())
+            display_bullets.append(f"• {clean_c}")
+        if len(changes) > 6:
+            display_bullets.append(f"• *... and {len(changes) - 6} more cheat options*")
+        bullets_text = "\n".join(display_bullets)
+        embed.add_field(name="📋 Cheats & Changes Included", value=bullets_text, inline=False)
+    else:
+        fallback_desc = f"Cheats and trainer ready for {platform} on WeMod / Wand."
+        embed.add_field(name="📋 Trainer Details", value=fallback_desc, inline=False)
+
+    embed.add_field(
+        name="🔗 Links",
+        value=f"👉 **[Launch / Get Cheats on WeMod]({wemod_url})** • 💬 **[Discussion & Community]({topic_url})**",
+        inline=False
+    )
+
+    embed.set_footer(text="WeMod / Wand Monitor • Game Trainers & Cheats • GMT+8", icon_url=WEMOD_ICON)
     return embed
 
 

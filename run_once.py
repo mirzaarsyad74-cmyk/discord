@@ -29,7 +29,8 @@ from external_monitors import (
     create_steamrip_embed,
     create_suo_embed,
     create_steam_deal_embed,
-    create_onlinefix_embed
+    create_onlinefix_embed,
+    create_wemod_embed
 )
 
 # UTF-8 encoding support
@@ -68,6 +69,7 @@ def load_config() -> dict:
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
         "watch_onlinefix": True,
+        "watch_wemod": True,
         "watch_csrin": False,
         "enable_global_feed": False,
         "subforum_feeds": [],
@@ -271,6 +273,16 @@ def main():
                 embed = create_onlinefix_embed(upd)
                 safe_webhook_send(webhook, embed, username="Online-Fix.me")
                 logger.info(f"Posted Online-Fix: {upd['title']}")
+
+    # 9. WeMod / Wand Watcher (Signature Electric Iris / Wand Indigo Color)
+    if config.get("watch_wemod", True):
+        logger.info("Checking WeMod / Wand trainer releases & updates...")
+        wm_updates = monitor.check_wemod_updates()
+        if wm_updates:
+            for upd in wm_updates:
+                embed = create_wemod_embed(upd)
+                safe_webhook_send(webhook, embed, username="WeMod / Wand")
+                logger.info(f"Posted WeMod Trainer: {upd['game_name']} ({upd['action_type']})")
 
     logger.info("Single-run execution finished successfully!")
 

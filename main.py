@@ -57,6 +57,7 @@ def load_config() -> dict:
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
         "watch_onlinefix": True,
+        "watch_wemod": True,
         "watch_csrin": False,
         "enable_global_feed": False,
         "subforum_feeds": [],
@@ -175,6 +176,7 @@ def create_startup_test_embed():
     embed.add_field(name="🌿 DODI Repacks", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="🔥 Reddit r/CrackWatch", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="🎮 Online-Fix.me", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🪄 WeMod / Wand", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="⚙️ Steam Client Updates", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="⚡ 24/7 Keep-Alive", value="`✅ Armed & Running`", inline=True)
     embed.set_footer(text="Game Release Monitor • Live Startup Test • GMT+8")
@@ -324,6 +326,17 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking Online-Fix feed: {e}")
 
+    # Check WeMod / Wand (Game Trainers & Cheat Updates)
+    if config.get("watch_wemod", True):
+        try:
+            from external_monitors import create_wemod_embed
+            logger.info("Checking WeMod / Wand trainers (https://community.wemod.com/)...")
+            updates = await asyncio.to_thread(monitor.check_wemod_updates)
+            for upd in updates:
+                await channel.send(embed=create_wemod_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking WeMod feed: {e}")
+
 
 @bot.event
 async def on_ready():
@@ -342,6 +355,8 @@ async def on_ready():
         active_monitors.append("r/CrackWatch")
     if config.get("watch_onlinefix", True):
         active_monitors.append("Online-Fix (Co-op)")
+    if config.get("watch_wemod", True):
+        active_monitors.append("WeMod (Wand)")
     if config.get("watch_steam_versions", True):
         active_monitors.append("Steam Client")
     if config.get("watch_csrin", False):
@@ -411,6 +426,12 @@ async def cmd_check(ctx: commands.Context):
         for upd in await asyncio.to_thread(monitor.check_onlinefix_updates):
             total_new += 1
             await ctx.send(embed=create_onlinefix_embed(upd))
+
+    if config.get("watch_wemod", True):
+        from external_monitors import create_wemod_embed
+        for upd in await asyncio.to_thread(monitor.check_wemod_updates):
+            total_new += 1
+            await ctx.send(embed=create_wemod_embed(upd))
 
     if config.get("watch_csrin", False):
         topics = config.get("topics", [])
@@ -713,6 +734,15 @@ async def run_webhook_daemon(webhook_url: str):
                     safe_webhook_send(webhook, create_onlinefix_embed(upd), username="Online-Fix.me")
                     logger.info(f"Posted Online-Fix: {upd['title']}")
 
+            # Check WeMod / Wand (Game Trainers & Cheat Updates)
+            if current_cfg.get("watch_wemod", True):
+                from external_monitors import create_wemod_embed
+                logger.info("Checking WeMod / Wand trainers (https://community.wemod.com/)...")
+                updates = await asyncio.to_thread(monitor.check_wemod_updates)
+                for upd in updates:
+                    safe_webhook_send(webhook, create_wemod_embed(upd), username="WeMod / Wand")
+                    logger.info(f"Posted WeMod Trainer: {upd['game_name']} ({upd['action_type']})")
+
         except Exception as e:
             logger.error(f"Error during webhook poll: {e}", exc_info=True)
 
@@ -809,6 +839,7 @@ def start_health_server():
                     ("DODI", config.get("watch_dodi", False)),
                     ("r/CrackWatch", config.get("watch_crackwatch_reddit", True)),
                     ("Online-Fix", config.get("watch_onlinefix", True)),
+                    ("WeMod / Wand", config.get("watch_wemod", True)),
                     ("Steam Client", config.get("watch_steam_versions", True)),
                 ] if enabled
             ]
