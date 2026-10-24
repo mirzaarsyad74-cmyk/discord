@@ -330,7 +330,7 @@ async def bot_monitor_task():
     if config.get("watch_wemod", True):
         try:
             from external_monitors import create_wemod_embed
-            logger.info("Checking WeMod / Wand trainers (https://community.wemod.com/)...")
+            logger.info("Checking WeMod / Wand trainers (https://www.wemod.com/cheats?sort=latest)...")
             updates = await asyncio.to_thread(monitor.check_wemod_updates)
             for upd in updates:
                 await channel.send(embed=create_wemod_embed(upd))
@@ -737,7 +737,7 @@ async def run_webhook_daemon(webhook_url: str):
             # Check WeMod / Wand (Game Trainers & Cheat Updates)
             if current_cfg.get("watch_wemod", True):
                 from external_monitors import create_wemod_embed
-                logger.info("Checking WeMod / Wand trainers (https://community.wemod.com/)...")
+                logger.info("Checking WeMod / Wand trainers (https://www.wemod.com/cheats?sort=latest)...")
                 updates = await asyncio.to_thread(monitor.check_wemod_updates)
                 for upd in updates:
                     safe_webhook_send(webhook, create_wemod_embed(upd), username="WeMod / Wand")

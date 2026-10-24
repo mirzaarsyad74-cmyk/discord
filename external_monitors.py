@@ -27,7 +27,8 @@ DODI_FEED_URL = "https://dodi-repacks.site/feed/"
 CRACKWATCH_RSS_URL = "https://www.reddit.com/r/CrackWatch/new/.rss"
 ONLINEFIX_RSS_URL = "https://online-fix.me/rss.xml"
 ONLINEFIX_TG_URL = "https://t.me/s/onlinefix"
-WEMOD_FEED_URL = "https://community.wemod.com/u/system/activity.rss"
+WEMOD_LATEST_URL = "https://www.wemod.com/cheats?sort=latest"
+WEMOD_FEED_URL = WEMOD_LATEST_URL
 
 # Brand Colors (Distinct spectrum - zero similar colors)
 COLOR_STEAMRIP = 0x8B5CF6    # Vivid Royal Violet / Purple
@@ -370,6 +371,18 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
                 newly_seen.append(entry_id)
                 continue
 
+            # Prevent posting old historical submissions (e.g. approved from mod queue weeks later)
+            if updated:
+                try:
+                    dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                    now = datetime.now(timezone.utc)
+                    if (now - dt).total_seconds() > 48 * 3600:
+                        seen_ids.add(entry_id)
+                        newly_seen.append(entry_id)
+                        continue
+                except Exception:
+                    pass
+
             kl_time = parse_pubdate_to_kl(updated)
             new_items.append({
                 "source": "Reddit r/CrackWatch",
@@ -682,175 +695,196 @@ def create_onlinefix_embed(item: Dict[str, Any]):
     return embed
 
 
+def fetch_wemod_trainer_detail(slug_url: str) -> dict:
+    """Fetches cheats list, creator, build ID, and store/community links from individual trainer page."""
+    detail = {}
+    try:
+        import json
+        html = fetch_web_content(slug_url, timeout=6, silent_fail=True)
+        if not html:
+            return detail
+
+        scripts = re.findall(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.DOTALL)
+        for scr in scripts:
+            try:
+                d = json.loads(scr)
+                if d.get("@type") == "VideoGame":
+                    detail["cheats"] = d.get("cheatCode", [])
+                    creator = d.get("creator")
+                    if isinstance(creator, dict):
+                        detail["creator"] = creator.get("name")
+                    elif isinstance(creator, str):
+                        detail["creator"] = creator
+                    img_url = d.get("image", "")
+                    detail["screenshot"] = img_url
+                    bm = re.search(r'/screenshots/trainers/\d+/[^/]+/(\d+)/', img_url)
+                    if bm:
+                        detail["build_id"] = bm.group(1)
+
+                    same_as = d.get("sameAs", [])
+                    if isinstance(same_as, list) and same_as:
+                        detail["steam_url"] = same_as[0]
+                    elif isinstance(same_as, str):
+                        detail["steam_url"] = same_as
+                    break
+            except Exception:
+                continue
+
+        m_comm = re.search(r'href=["\'](https://community\.wemod\.com/t/[^"\']+)["\']', html)
+        if m_comm:
+            detail["community_url"] = m_comm.group(1)
+    except Exception as ex:
+        logger.debug(f"Failed to fetch trainer detail for {slug_url}: {ex}")
+
+    return detail
+
+
 def check_wemod_feed(state: dict) -> List[Dict[str, Any]]:
     """
     Checks for newly released game trainers and trainer cheat updates from WeMod / Wand.
-    Parses Discourse official activity RSS feed: https://community.wemod.com/u/system/activity.rss
-    Extracts game title, target gaming platform (Steam, Xbox, Epic, GOG, etc.),
-    detailed cheats/changes bullets, and game thumbnail image.
+    Monitors live catalog feed: https://www.wemod.com/cheats?sort=latest
+    Extracts game title, gaming platforms (Steam, Xbox, Epic, GOG, EA, Ubisoft),
+    cheat count, detailed cheats list, trainer creator, and game thumbnail image.
     Uses strict FIFO ordered tracking to prevent duplicate postings.
     """
     wemod_state = state.setdefault("wemod", {})
-    seen_links = set(str(x) for x in wemod_state.get("seen_links", []))
-    meta_cache = wemod_state.setdefault("meta", {})
+    known_trainers = wemod_state.setdefault("known_trainers", {})
+    seen_keys = set(str(x) for x in wemod_state.get("seen_keys", []))
 
     try:
-        import html
-        xml_text = fetch_web_content(WEMOD_FEED_URL, timeout=12)
-        if not xml_text:
+        html = fetch_web_content(WEMOD_LATEST_URL, timeout=12)
+        if not html:
             return []
 
-        items = re.findall(r'<item>(.*?)</item>', xml_text, re.DOTALL)
+        idx_start = html.find('class="results-list"')
+        if idx_start == -1:
+            return []
+
+        chunk = html[idx_start:idx_start + 350000]
+        soup = BeautifulSoup(chunk, "html.parser")
+        items = soup.select("a.game-result")
         if not items:
             return []
 
-        # Pass 1: Build local meta cache from any item that has thumbnail and cheats URL
-        for it in items:
-            l_m = re.search(r'<link>(.*?)</link>', it)
-            link = l_m.group(1).strip() if l_m else ""
-            top_m = re.search(r'/t/[^/]+/(\d+)', link)
-            if not top_m:
-                continue
-            top_id = top_m.group(1)
+        # First-run initialization: populate initial games without sending historical notifications
+        if not known_trainers and not seen_keys:
+            logger.info(f"Initializing WeMod/Wand trainer tracker with {len(items[:30])} current games...")
+            init_keys = []
+            for a in items[:30]:
+                href = a.get("href", "").strip()
+                if not href.startswith("/cheats/"):
+                    continue
+                cheats_el = a.select_one(".col.cheats .desktop") or a.select_one(".col.cheats")
+                cheats_cnt_str = cheats_el.get_text(strip=True) if cheats_el else "0"
+                cheats_cnt = int(re.sub(r'\D', '', cheats_cnt_str) or 0)
+                upd_el = a.select_one(".col.updated")
+                upd_str = upd_el.get_text(strip=True) if upd_el else ""
 
-            d_m = re.search(r'<description>(.*?)</description>', it, re.DOTALL)
-            raw_desc = d_m.group(1) if d_m else ""
-            desc_clean = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_desc, flags=re.DOTALL)
-
-            img = re.search(r'<img\s+[^>]*src=["\'](https://api-cdn\.wemod\.com/title_thumbnails/[^"\']+)["\']', desc_clean)
-            wemod_u = re.search(r'href=["\'](https://www\.wemod\.com/cheats/[^"\']+)["\']', desc_clean)
-            if img or wemod_u:
-                entry = meta_cache.setdefault(top_id, {})
-                if img:
-                    entry["thumbnail"] = img.group(1)
-                if wemod_u:
-                    entry["wemod_url"] = wemod_u.group(1)
-
-        # First-run initialization: record current entries so we don't spam historical items
-        if not seen_links:
-            logger.info(f"Initializing WeMod/Wand trainer tracker with {len(items)} current items...")
-            init_links = []
-            for it in items:
-                l_m = re.search(r'<link>(.*?)</link>', it)
-                if l_m and l_m.group(1).strip():
-                    init_links.append(l_m.group(1).strip())
-            wemod_state["seen_links"] = update_seen_list([], init_links, max_len=600)
+                known_trainers[href] = {
+                    "cheats_count": cheats_cnt,
+                    "updated_text": upd_str,
+                    "init_seen": True
+                }
+                init_keys.append(f"{href}:{cheats_cnt}")
+            wemod_state["seen_keys"] = update_seen_list([], init_keys, max_len=600)
             return []
 
         new_items = []
-        newly_seen_links = []
-        batch_seen_actions = set()
+        newly_seen_keys = []
 
-        for it in items:
-            l_m = re.search(r'<link>(.*?)</link>', it)
-            link = l_m.group(1).strip() if l_m else ""
-            if not link or link in seen_links:
+        for a in items[:25]:
+            href = a.get("href", "").strip()
+            if not href.startswith("/cheats/"):
                 continue
 
-            top_m = re.search(r'/t/[^/]+/(\d+)', link)
-            top_id = top_m.group(1) if top_m else ""
+            name_el = a.select_one(".col.name div")
+            name = name_el.get_text(strip=True) if name_el else a.get("aria-label", "")
 
-            t_m = re.search(r'<title>(.*?)</title>', it)
-            raw_title = html.unescape(t_m.group(1).strip()) if t_m else "WeMod Trainer"
+            img = a.select_one(".col.thumbnail img")
+            thumb = img.get("src") if img else None
 
-            d_m = re.search(r'<description>(.*?)</description>', it, re.DOTALL)
-            raw_desc = d_m.group(1) if d_m else ""
-            desc_clean = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_desc, flags=re.DOTALL)
+            cheats_el = a.select_one(".col.cheats .desktop") or a.select_one(".col.cheats")
+            cheats_cnt_str = cheats_el.get_text(strip=True) if cheats_el else "0"
+            cheats_cnt = int(re.sub(r'\D', '', cheats_cnt_str) or 0)
 
-            p_m = re.search(r'<pubdate>(.*?)</pubdate>', it, re.IGNORECASE)
-            pub_date = p_m.group(1).strip() if p_m else ""
-            time_kl = parse_pubdate_to_kl(pub_date)
+            platforms = [p.get_text(strip=True) for p in a.select(".col.platforms .platform span") if p.get_text(strip=True)]
+            if not platforms:
+                platforms = [p.get("alt") for p in a.select(".col.platforms .platform img") if p.get("alt")]
+            platform_str = ", ".join(platforms) if platforms else "PC"
 
-            # Extract game name and platform
-            # Example title: ForgeTax Cheats and Trainer for Steam
-            m = re.match(r'^(.*?)\s+Cheats and Trainer for\s+(.*)$', raw_title, re.IGNORECASE)
-            if m:
-                game_name = m.group(1).strip()
-                platform = m.group(2).strip()
-            else:
-                game_name = raw_title
-                platform = "PC"
+            upd_el = a.select_one(".col.updated")
+            updated_str = upd_el.get_text(strip=True) if upd_el else ""
 
-            changes = re.findall(r'<li>(.*?)</li>', desc_clean, re.DOTALL)
-            cleaned_changes = [re.sub(r'<.*?>', '', c).strip() for c in changes]
-            cleaned_changes = [c for c in cleaned_changes if c]
+            full_url = f"https://www.wemod.com{href}"
 
-            # Determine action type
-            is_release = any("released trainer" in c.lower() for c in cleaned_changes)
-            is_update = "cheats have been updated" in desc_clean.lower() or any("cheat added" in c.lower() or "cheats updated" in c.lower() for c in cleaned_changes)
+            is_new_game = href not in known_trainers
+            known_info = known_trainers.get(href, {})
+            old_cheats_cnt = known_info.get("cheats_count", 0)
+            old_build_id = known_info.get("build_id")
 
-            if is_release:
+            # Determine if this game has a fresh update
+            is_recent = any(w in updated_str.lower() for w in ["minute", "hour", "just now", "today"])
+            cheats_changed = (cheats_cnt != old_cheats_cnt) and (old_cheats_cnt > 0)
+
+            action_type = None
+            detail = {}
+
+            if is_new_game:
                 action_type = "✨ New Trainer Release"
-            elif is_update:
-                action_type = "🔄 Trainer Updated"
-            else:
-                # Mark in-development / non-release topics as seen so we don't re-scan them, but don't notify
-                seen_links.add(link)
-                newly_seen_links.append(link)
+                detail = fetch_wemod_trainer_detail(full_url)
+            elif cheats_changed or (is_recent and not known_info.get("init_seen")):
+                detail = fetch_wemod_trainer_detail(full_url)
+                curr_build = detail.get("build_id")
+                event_key = f"{href}:{cheats_cnt}:{curr_build or updated_str}"
+                if event_key not in seen_keys and curr_build != old_build_id:
+                    action_type = "🔄 Trainer Updated"
+                    newly_seen_keys.append(event_key)
+                    seen_keys.add(event_key)
+
+            if not action_type:
                 continue
 
-            # Deduplicate multiple posts within this cycle for the same topic & action
-            action_key = f"{top_id}:{action_type}"
-            if action_key in batch_seen_actions:
-                seen_links.add(link)
-                newly_seen_links.append(link)
-                continue
-            batch_seen_actions.add(action_key)
+            # Update known trainer info in state
+            known_trainers[href] = {
+                "name": name,
+                "cheats_count": cheats_cnt,
+                "build_id": detail.get("build_id") or old_build_id,
+                "updated_text": updated_str,
+                "last_notified": datetime.now(timezone.utc).isoformat()
+            }
+            item_key = f"{href}:{cheats_cnt}:{detail.get('build_id') or ''}"
+            seen_keys.add(item_key)
+            newly_seen_keys.append(item_key)
 
-            # Retrieve or fetch metadata (thumbnail and cheats page URL)
-            meta = meta_cache.get(top_id, {})
-            thumbnail = meta.get("thumbnail")
-            wemod_url = meta.get("wemod_url")
-
-            # If thumbnail or wemod_url not yet in cache, fetch topic JSON once
-            if (not thumbnail or not wemod_url) and top_id:
-                try:
-                    import json
-                    topic_json_url = f"https://community.wemod.com/t/{top_id}.json"
-                    json_str = fetch_web_content(topic_json_url, timeout=4)
-                    if json_str:
-                        t_data = json.loads(json_str)
-                        posts = t_data.get("post_stream", {}).get("posts", [])
-                        if posts:
-                            post0_html = posts[0].get("cooked", "")
-                            img_m = re.search(r'https://api-cdn\.wemod\.com/title_thumbnails/[^ "\']+', post0_html)
-                            if img_m and not thumbnail:
-                                thumbnail = img_m.group(0)
-                            wm_m = re.search(r'https://www\.wemod\.com/cheats/[^ "\']+', post0_html)
-                            if wm_m and not wemod_url:
-                                wemod_url = wm_m.group(0)
-                            meta_cache[top_id] = {
-                                "thumbnail": thumbnail,
-                                "wemod_url": wemod_url
-                            }
-                except Exception as ex:
-                    logger.debug(f"Could not fetch topic JSON for {top_id}: {ex}")
-
-            if not wemod_url:
-                wemod_url = link
+            now_kl = datetime.now(timezone.utc).astimezone(KL_TZ)
+            kl_str = now_kl.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+            rel_note = f"*(Updated: {updated_str})*" if updated_str else ""
+            time_kl_str = f"`{kl_str}`\n{rel_note}".strip()
 
             new_items.append({
                 "source": "WeMod / Wand",
-                "game_name": game_name,
-                "platform": platform,
+                "game_name": name,
+                "platform": platform_str,
                 "action_type": action_type,
-                "topic_id": top_id,
-                "topic_url": link,
-                "wemod_url": wemod_url,
-                "thumbnail": thumbnail,
-                "changes": cleaned_changes,
-                "time_kl": time_kl
+                "wemod_url": full_url,
+                "thumbnail": thumb,
+                "cheats_count": cheats_cnt,
+                "updated_text": updated_str,
+                "creator": detail.get("creator"),
+                "cheats": detail.get("cheats", []),
+                "steam_url": detail.get("steam_url"),
+                "community_url": detail.get("community_url"),
+                "time_kl": time_kl_str
             })
-            seen_links.add(link)
-            newly_seen_links.append(link)
 
-        if newly_seen_links:
-            wemod_state["seen_links"] = update_seen_list(wemod_state.get("seen_links", []), newly_seen_links, max_len=600)
-            # Prune meta cache if it gets excessively large
-            if len(meta_cache) > 800:
-                keys = list(meta_cache.keys())
-                for k in keys[:-600]:
-                    del meta_cache[k]
+        if newly_seen_keys:
+            wemod_state["seen_keys"] = update_seen_list(wemod_state.get("seen_keys", []), newly_seen_keys, max_len=600)
+
+        # Prune known_trainers if it exceeds 800 entries
+        if len(known_trainers) > 800:
+            keys_to_remove = list(known_trainers.keys())[:-500]
+            for k in keys_to_remove:
+                del known_trainers[k]
 
         return list(reversed(new_items))
 
@@ -862,32 +896,35 @@ def check_wemod_feed(state: dict) -> List[Dict[str, Any]]:
 def create_wemod_embed(item: Dict[str, Any]):
     """Builds a Discord Embed for a new WeMod trainer release or update with signature Wand Indigo/Electric Iris color."""
     import discord
-    game_name = item["game_name"]
-    platform = item.get("platform", "PC")
+    game_name = item.get("game_name") or item.get("name", "Unknown Game")
+    platform = item.get("platform") or item.get("platforms", "PC")
     action_type = item.get("action_type", "✨ New Trainer Release")
     is_release = "Release" in action_type
 
     plat_lower = platform.lower()
-    if "steam" in plat_lower:
-        plat_badge = "🪟 Steam"
-    elif "xbox" in plat_lower or "microsoft" in plat_lower:
-        plat_badge = "🎮 Xbox / Windows Store"
-    elif "epic" in plat_lower:
-        plat_badge = "⚡ Epic Games"
-    elif "gog" in plat_lower:
-        plat_badge = "🔮 GOG"
-    elif "ea" in plat_lower or "origin" in plat_lower:
-        plat_badge = "🟠 EA app"
-    elif "ubisoft" in plat_lower:
-        plat_badge = "🌀 Ubisoft Connect"
-    else:
-        plat_badge = f"💻 {platform}"
+    badges = []
+    if re.search(r'\bsteam\b', plat_lower):
+        badges.append("🪟 Steam")
+    if re.search(r'\b(?:xbox|uwp|microsoft)\b', plat_lower):
+        badges.append("🎮 Xbox")
+    if re.search(r'\bepic\b', plat_lower):
+        badges.append("⚡ Epic Games")
+    if re.search(r'\bgog\b', plat_lower):
+        badges.append("🔮 GOG")
+    if re.search(r'\b(?:ea|origin)\b', plat_lower):
+        badges.append("🟠 EA app")
+    if re.search(r'\bubisoft\b', plat_lower):
+        badges.append("🌀 Ubisoft")
+    if not badges:
+        badges.append(f"💻 {platform}")
+    plat_str = " • ".join(badges)
 
     title_prefix = "✨ [WeMod Trainer Release]" if is_release else "🔄 [WeMod Trainer Updated]"
     embed_title = f"{title_prefix} {game_name}"
 
-    wemod_url = item.get("wemod_url") or item.get("topic_url", "https://www.wemod.com")
-    topic_url = item.get("topic_url") or wemod_url
+    wemod_url = item.get("wemod_url") or item.get("url") or item.get("topic_url", "https://www.wemod.com")
+    community_url = item.get("community_url") or item.get("topic_url")
+    steam_url = item.get("steam_url")
 
     embed = discord.Embed(
         title=embed_title,
@@ -901,32 +938,52 @@ def create_wemod_embed(item: Dict[str, Any]):
         embed.set_thumbnail(url=WEMOD_ICON)
 
     embed.add_field(name="🎮 Game Title", value=f"**[{game_name}]({wemod_url})**", inline=False)
-    embed.add_field(name="💻 Platform", value=plat_badge, inline=True)
+    embed.add_field(name="💻 Platform", value=plat_str, inline=True)
     embed.add_field(name="🏷️ Event Type", value=f"**{action_type}**", inline=True)
-    embed.add_field(name="🕒 Time (GMT+8)", value=item.get("time_kl", "N/A"), inline=True)
 
-    changes = item.get("changes", [])
+    time_val = item.get("time_kl")
+    if not time_val:
+        now_kl = datetime.now(timezone.utc).astimezone(KL_TZ)
+        kl_str = now_kl.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+        rel_note = f"*(Updated: {item.get('updated_text', 'recently')})*"
+        time_val = f"`{kl_str}`\n{rel_note}"
+    embed.add_field(name="🕒 Time (GMT+8)", value=time_val, inline=True)
+
+    if item.get("creator"):
+        embed.add_field(name="👤 Trainer Creator", value=f"`{item['creator']}`", inline=True)
+
+    cheats_cnt = item.get("cheats_count", 0)
+    changes = item.get("changes") or item.get("cheats", [])
     if changes:
         display_bullets = []
         for c in changes[:6]:
-            clean_c = " ".join(c.split())
+            clean_c = " ".join(str(c).split())
             display_bullets.append(f"• {clean_c}")
         if len(changes) > 6:
             display_bullets.append(f"• *... and {len(changes) - 6} more cheat options*")
         bullets_text = "\n".join(display_bullets)
-        embed.add_field(name="📋 Cheats & Changes Included", value=bullets_text, inline=False)
+        field_name = f"📋 Cheats Included ({len(changes)} Cheats)" if len(changes) > 1 else "📋 Cheats & Changes Included"
+        embed.add_field(name=field_name, value=bullets_text, inline=False)
+    elif cheats_cnt > 0:
+        embed.add_field(name="📋 Cheats & Changes Included", value=f"• Released trainer with **{cheats_cnt} cheats** for {plat_str}", inline=False)
     else:
-        fallback_desc = f"Cheats and trainer ready for {platform} on WeMod / Wand."
+        fallback_desc = f"Cheats and trainer ready for {plat_str} on WeMod / Wand."
         embed.add_field(name="📋 Trainer Details", value=fallback_desc, inline=False)
 
+    links = [f"👉 **[Launch / Get Cheats on WeMod]({wemod_url})**"]
+    if community_url:
+        links.append(f"💬 **[Discussion & Community]({community_url})**")
+    if steam_url:
+        links.append(f"🛒 **[Steam Store]({steam_url})**")
     embed.add_field(
         name="🔗 Links",
-        value=f"👉 **[Launch / Get Cheats on WeMod]({wemod_url})** • 💬 **[Discussion & Community]({topic_url})**",
+        value=" • ".join(links),
         inline=False
     )
 
     embed.set_footer(text="WeMod / Wand Monitor • Game Trainers & Cheats • GMT+8", icon_url=WEMOD_ICON)
     return embed
+
 
 
 def check_steamrip_updates(state: dict) -> List[Dict[str, Any]]:

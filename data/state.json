@@ -65,7 +65,33 @@
     ]
   },
   "crackwatch": {
-    "seen_ids": []
+    "seen_ids": [
+      "t3_1xdpvt8",
+      "t3_1xcq6gq",
+      "t3_1xcphoa",
+      "t3_1xcpdnp",
+      "t3_1xcoxp9",
+      "t3_1xc0wsa",
+      "t3_1xbg5t1",
+      "t3_1xb5c02",
+      "t3_1xaj10y",
+      "t3_1x9r40n",
+      "t3_1x9gbgw",
+      "t3_1x98fnb",
+      "t3_1x969x3",
+      "t3_1x9464b",
+      "t3_1x91cnu",
+      "t3_1x91caf",
+      "t3_1x8k8n5",
+      "t3_1x855ch",
+      "t3_1x7hr3e",
+      "t3_1x6yifb",
+      "t3_1x6yhcl",
+      "t3_1x6xmtc",
+      "t3_1x6xft4",
+      "t3_1x6ize5",
+      "t3_1x5r02n"
+    ]
   },
   "steamrip": {
     "seen_ids": [
@@ -545,6 +571,192 @@
       "https://online-fix.me/games/simulator/18284-scam-with-your-friends-online.html",
       "https://online-fix.me/games/officialservers/18285-deep-dish-dungeon-online.html",
       "https://online-fix.me/games/adventures/18278-party-animals-po-seti.html"
+    ]
+  },
+  "wemod": {
+    "known_trainers": {
+      "/cheats/grounded-2-trainers": {
+        "cheats_count": 34,
+        "updated_text": "1 hour ago",
+        "init_seen": true
+      },
+      "/cheats/rangers-path-national-park-simulator-trainers": {
+        "cheats_count": 17,
+        "updated_text": "2 hours ago",
+        "init_seen": true
+      },
+      "/cheats/onimusha-warlords-trainers": {
+        "cheats_count": 13,
+        "updated_text": "3 hours ago",
+        "init_seen": true
+      },
+      "/cheats/final-fantasy-resonance-trainers": {
+        "cheats_count": 63,
+        "updated_text": "9 hours ago",
+        "init_seen": true
+      },
+      "/cheats/vampires-bloodlord-rising-trainers": {
+        "cheats_count": 37,
+        "updated_text": "11 hours ago",
+        "init_seen": true
+      },
+      "/cheats/paperhead-trainers": {
+        "cheats_count": 7,
+        "updated_text": "11 hours ago",
+        "init_seen": true
+      },
+      "/cheats/nordic-ashes-survivors-of-ragnarok-trainers": {
+        "cheats_count": 5,
+        "updated_text": "11 hours ago",
+        "init_seen": true
+      },
+      "/cheats/gtfo-trainers": {
+        "cheats_count": 22,
+        "updated_text": "14 hours ago",
+        "init_seen": true
+      },
+      "/cheats/medieval-crafter-blacksmith-trainers": {
+        "cheats_count": 9,
+        "updated_text": "14 hours ago",
+        "init_seen": true
+      },
+      "/cheats/rancher-a-new-life-trainers": {
+        "cheats_count": 29,
+        "updated_text": "14 hours ago",
+        "init_seen": true
+      },
+      "/cheats/invincible-vs-trainers": {
+        "cheats_count": 6,
+        "updated_text": "16 hours ago",
+        "init_seen": true
+      },
+      "/cheats/japanese-ramen-simulator-trainers": {
+        "cheats_count": 23,
+        "updated_text": "18 hours ago",
+        "init_seen": true
+      },
+      "/cheats/chillquarium-trainers": {
+        "cheats_count": 3,
+        "updated_text": "18 hours ago",
+        "init_seen": true
+      },
+      "/cheats/infection-free-zone-trainers": {
+        "cheats_count": 26,
+        "updated_text": "19 hours ago",
+        "init_seen": true
+      },
+      "/cheats/norland-trainers": {
+        "cheats_count": 15,
+        "updated_text": "20 hours ago",
+        "init_seen": true
+      },
+      "/cheats/mycopunk-trainers": {
+        "cheats_count": 7,
+        "updated_text": "22 hours ago",
+        "init_seen": true
+      },
+      "/cheats/wreckfest-2-trainers": {
+        "cheats_count": 5,
+        "updated_text": "22 hours ago",
+        "init_seen": true
+      },
+      "/cheats/star-trek-outposts-unknown-trainers": {
+        "cheats_count": 71,
+        "updated_text": "23 hours ago",
+        "init_seen": true
+      },
+      "/cheats/dragon-quest-heroes-tornekos-mystery-dungeon-classic-hd-trainers": {
+        "cheats_count": 14,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/broken-arrow-trainers": {
+        "cheats_count": 18,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/dying-light-2-stay-human-trainers": {
+        "cheats_count": 33,
+        "updated_text": "16 hours ago",
+        "init_seen": true
+      },
+      "/cheats/cyberpunk-2077-trainers": {
+        "cheats_count": 53,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/zero-sievert-trainers": {
+        "cheats_count": 18,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/scratch-the-ticket-trainers": {
+        "cheats_count": 11,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/scam-with-your-friends-trainers": {
+        "cheats_count": 33,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/the-witchs-bakery-trainers": {
+        "cheats_count": 26,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/deep-rock-galactic-rogue-core-trainers": {
+        "cheats_count": 46,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/spacebourne-2-trainers": {
+        "cheats_count": 26,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/zed-zone-trainers": {
+        "cheats_count": 10,
+        "updated_text": "yesterday",
+        "init_seen": true
+      },
+      "/cheats/stupid-never-dies-trainers": {
+        "cheats_count": 54,
+        "updated_text": "yesterday",
+        "init_seen": true
+      }
+    },
+    "seen_keys": [
+      "/cheats/grounded-2-trainers:34",
+      "/cheats/rangers-path-national-park-simulator-trainers:17",
+      "/cheats/onimusha-warlords-trainers:13",
+      "/cheats/final-fantasy-resonance-trainers:63",
+      "/cheats/vampires-bloodlord-rising-trainers:37",
+      "/cheats/paperhead-trainers:7",
+      "/cheats/nordic-ashes-survivors-of-ragnarok-trainers:5",
+      "/cheats/gtfo-trainers:22",
+      "/cheats/medieval-crafter-blacksmith-trainers:9",
+      "/cheats/rancher-a-new-life-trainers:29",
+      "/cheats/invincible-vs-trainers:6",
+      "/cheats/japanese-ramen-simulator-trainers:23",
+      "/cheats/chillquarium-trainers:3",
+      "/cheats/infection-free-zone-trainers:26",
+      "/cheats/norland-trainers:15",
+      "/cheats/mycopunk-trainers:7",
+      "/cheats/wreckfest-2-trainers:5",
+      "/cheats/star-trek-outposts-unknown-trainers:71",
+      "/cheats/dragon-quest-heroes-tornekos-mystery-dungeon-classic-hd-trainers:14",
+      "/cheats/broken-arrow-trainers:18",
+      "/cheats/dying-light-2-stay-human-trainers:33",
+      "/cheats/cyberpunk-2077-trainers:53",
+      "/cheats/zero-sievert-trainers:18",
+      "/cheats/scratch-the-ticket-trainers:11",
+      "/cheats/scam-with-your-friends-trainers:33",
+      "/cheats/the-witchs-bakery-trainers:26",
+      "/cheats/deep-rock-galactic-rogue-core-trainers:46",
+      "/cheats/spacebourne-2-trainers:26",
+      "/cheats/zed-zone-trainers:10",
+      "/cheats/stupid-never-dies-trainers:54"
     ]
   }
 }
