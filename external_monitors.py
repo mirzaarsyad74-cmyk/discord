@@ -1,4 +1,5 @@
 import re
+import time
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional
@@ -84,11 +85,46 @@ SUO_GENRE_MAP = {
 }
 
 REDDIT_HEADERS = {
-    "User-Agent": "python:suga.nexus.crackwatch.monitor:v1.1 (by /u/suga_nexus contact: admin@suganexus.com)"
+    "User-Agent": "Discordbot/2.0; (+https://discordapp.com)",
+    "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9"
 }
 STANDARD_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
+
+
+def fetch_reddit_feed(url: str) -> Optional[str]:
+    """
+    Fetches Reddit RSS feed with Discordbot User-Agent and curl_cffi browser TLS impersonation fallback.
+    Prevents HTTP 429 and Cloudflare/Fastly blocks on cloud datacenter IPs (like Koyeb).
+    """
+    # 1. Primary attempt: Discordbot User-Agent (whitelisted by Reddit WAF)
+    try:
+        res = requests.get(url, headers=REDDIT_HEADERS, timeout=12)
+        if res.status_code == 200 and ("<entry>" in res.text or "<item>" in res.text):
+            return res.text
+        if res.status_code == 429:
+            logger.info(f"Reddit 429 received on {url}. Retrying via curl_cffi browser TLS impersonation...")
+    except Exception as e:
+        logger.debug(f"requests error fetching {url}: {e}")
+
+    # 2. Fallback attempt: curl_cffi with Chrome 120 browser handshake
+    try:
+        from curl_cffi import requests as c_requests
+        c_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9"
+        }
+        res_c = c_requests.get(url, headers=c_headers, impersonate="chrome120", timeout=12)
+        if res_c.status_code == 200 and ("<entry>" in res_c.text or "<item>" in res_c.text):
+            return res_c.text
+    except Exception as e:
+        logger.debug(f"curl_cffi error fetching {url}: {e}")
+
+    return None
+
 
 
 def parse_pubdate_to_kl(date_str: str) -> str:
@@ -313,17 +349,20 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
     cw_state = state.setdefault("crackwatch", {})
     seen_ids = set(str(x) for x in cw_state.get("seen_ids", []))
 
+    # Rate-limit shield: throttle requests on shared container IPs to at most once every 90s
+    now_ts = int(time.time())
+    last_check = int(cw_state.get("last_check_ts", 0))
+    if seen_ids and (now_ts - last_check < 90):
+        return []
+
     try:
         import html
-        res = requests.get(CRACKWATCH_RSS_URL, headers=REDDIT_HEADERS, timeout=12)
-        if res.status_code == 429:
-            logger.info("Reddit rate-limited (HTTP 429); will retry on next cycle.")
-            return []
-        if res.status_code != 200:
-            logger.warning(f"Failed to fetch r/CrackWatch: HTTP {res.status_code}")
+        feed_xml = fetch_reddit_feed(CRACKWATCH_RSS_URL)
+        cw_state["last_check_ts"] = now_ts
+        if not feed_xml:
             return []
 
-        entries = re.findall(r'<entry>(.*?)</entry>', res.text, re.DOTALL)
+        entries = re.findall(r'<entry>(.*?)</entry>', feed_xml, re.DOTALL)
         if not entries:
             return []
 
@@ -1680,9 +1719,9 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
     FREEGAMES_RSS_URL = "https://www.reddit.com/r/FreeGamesOnSteam/new/.rss"
     try:
         import html
-        res_r = requests.get(FREEGAMES_RSS_URL, headers=REDDIT_HEADERS, timeout=12)
-        if res_r.status_code == 200:
-            entries = re.findall(r'<entry>(.*?)</entry>', res_r.text, re.DOTALL)
+        feed_r = fetch_reddit_feed(FREEGAMES_RSS_URL)
+        if feed_r:
+            entries = re.findall(r'<entry>(.*?)</entry>', feed_r, re.DOTALL)
             for e in entries:
                 id_m = re.search(r'<id>(.*?)</id>', e)
                 entry_id = id_m.group(1).strip() if id_m else ""
