@@ -21,5 +21,7 @@
   "alert_on_title_change": true,
   "alert_on_op_update": true,
   "send_latest_post_on_startup": false,
-  "csrin_cookie": ""
+  "csrin_cookie": "",
+  "supabase_url": "https://pbhojxubeuapmfvmuoig.supabase.co",
+  "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBiaG9qeHViZXVhcG1mdm11b2lnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MzA2NjU2MiwiZXhwIjoyMTA4NjQyNTYyfQ.d0xrgE6_-WxtbL_i2MvD2SvHOMN3C8-7BesTfgAstSY"
 }

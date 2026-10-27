@@ -5,6 +5,7 @@ import hashlib
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
+import requests
 from scraper import CsRinScraper, ForumPost, TopicMetadata
 
 logger = logging.getLogger("cs_rin_monitor")
@@ -26,7 +27,52 @@ class ForumMonitor:
         self.state_file = state_file
         self.state: Dict[str, Any] = self._load_state()
 
+    def _get_supabase_credentials(self) -> Tuple[str, str]:
+        """Resolves Supabase URL and Key from environment variables or config.json."""
+        url = os.getenv("SUPABASE_URL", "").strip()
+        key = os.getenv("SUPABASE_KEY", "").strip()
+        if not url or not key:
+            cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if os.path.exists(cfg_path):
+                try:
+                    with open(cfg_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                        url = url or cfg.get("supabase_url", "").strip()
+                        key = key or cfg.get("supabase_key", "").strip()
+                except Exception:
+                    pass
+        return url, key
+
     def _load_state(self) -> Dict[str, Any]:
+        """Loads state from Supabase Cloud Database (if configured) or local state.json."""
+        supa_url, supa_key = self._get_supabase_credentials()
+        if supa_url and supa_key:
+            try:
+                headers = {
+                    "apikey": supa_key,
+                    "Authorization": f"Bearer {supa_key}"
+                }
+                res = requests.get(
+                    f"{supa_url}/rest/v1/bot_state?key=eq.main_state&select=value",
+                    headers=headers,
+                    timeout=8
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    if data and isinstance(data, list) and len(data) > 0 and "value" in data[0]:
+                        cloud_state = data[0]["value"]
+                        logger.info("☁️ Successfully loaded persistent bot state from Supabase Cloud Database!")
+                        try:
+                            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+                            with open(self.state_file, "w", encoding="utf-8") as f:
+                                json.dump(cloud_state, f, indent=2, ensure_ascii=False)
+                        except Exception:
+                            pass
+                        return cloud_state
+            except Exception as e:
+                logger.warning(f"Could not load state from Supabase, falling back to local file: {e}")
+
+        # Local fallback
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, "r", encoding="utf-8") as f:
@@ -36,12 +82,35 @@ class ForumMonitor:
         return {"topics": {}, "subforums": {}}
 
     def save_state(self):
+        """Saves state to local state.json and syncs to Supabase Cloud Database."""
+        # 1. Save local file cache
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
         try:
             with open(self.state_file, "w", encoding="utf-8") as f:
                 json.dump(self.state, f, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error writing state file: {e}")
+
+        # 2. Sync to Supabase Cloud Database
+        supa_url, supa_key = self._get_supabase_credentials()
+        if supa_url and supa_key:
+            try:
+                headers = {
+                    "apikey": supa_key,
+                    "Authorization": f"Bearer {supa_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates"
+                }
+                res = requests.post(
+                    f"{supa_url}/rest/v1/bot_state",
+                    headers=headers,
+                    json={"key": "main_state", "value": self.state},
+                    timeout=8
+                )
+                if res.status_code not in (200, 201):
+                    logger.warning(f"Supabase sync status: {res.status_code}")
+            except Exception as e:
+                logger.warning(f"Failed to sync state to Supabase: {e}")
 
     @staticmethod
     def compute_post_fingerprint(post: ForumPost) -> str:
