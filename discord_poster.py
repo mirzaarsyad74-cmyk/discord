@@ -358,20 +358,42 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
     return embed
 
 
+DEFAULT_MONITOR_AVATARS: Dict[str, str] = {
+    "WeMod / Wand": "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png",
+    "SteamRIP Monitor": "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png",
+    "SUO Wannabe Monitor": "https://steamunlockonennabe.click/logo.ico",
+    "Steam Specials": "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png",
+    "Steam Client Watch": "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png",
+    "FitGirl Repacks": "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg",
+    "DODI Repacks": "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-192x192.png",
+    "Reddit CrackWatch": "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png",
+    "Online-Fix.me": "https://online-fix.me/apple-touch-icon.png",
+    "CS.RIN.RU Monitor": "https://cs.rin.ru/favicon.ico",
+    "Release Monitor Bot": "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png",
+}
+
+
 def safe_webhook_send(
     webhook: Any,
     embed: discord.Embed,
     username: str = "CS.RIN.RU Monitor",
+    avatar_url: Optional[str] = None,
     max_retries: int = 3,
     delay: float = 1.2
 ) -> bool:
     """
     Sends a Discord webhook with rate-limit shielding and HTTP 429 exponential backoff.
     Guarantees reliable delivery even when multiple releases burst in a single check.
+    Automatically assigns high-res monitor avatars for each monitor username.
     """
+    resolved_avatar = avatar_url or DEFAULT_MONITOR_AVATARS.get(username)
+
     for attempt in range(1, max_retries + 1):
         try:
-            webhook.send(embed=embed, username=username)
+            send_kwargs: Dict[str, Any] = {"embed": embed, "username": username}
+            if resolved_avatar:
+                send_kwargs["avatar_url"] = resolved_avatar
+            webhook.send(**send_kwargs)
             time.sleep(delay)
             return True
         except Exception as e:

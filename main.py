@@ -17,7 +17,8 @@ from discord_poster import (
     create_title_change_embed,
     create_op_update_embed,
     create_new_thread_embed,
-    safe_webhook_send
+    safe_webhook_send,
+    extract_metadata
 )
 
 # Set up UTF-8 for Windows console
@@ -64,6 +65,7 @@ def load_config() -> dict:
         "topics": [],
         "subforums": [],
         "releases_only": True,
+        "csrin_cracks_bypasses_only": True,
         "check_interval_seconds": 120,
         "alert_on_title_change": True,
         "alert_on_op_update": True,
@@ -99,7 +101,7 @@ async def send_updates_to_target(target, events: TopicUpdateEvents, is_webhook: 
         embed = create_title_change_embed(events.topic_id, old_t, new_t, url)
         try:
             if is_webhook:
-                target.send(embed=embed, username="CS.RIN.RU Monitor")
+                safe_webhook_send(target, embed, username="CS.RIN.RU Monitor")
             else:
                 await target.send(embed=embed)
             logger.info(f"Sent title change alert for topic {events.topic_id}")
@@ -111,15 +113,16 @@ async def send_updates_to_target(target, events: TopicUpdateEvents, is_webhook: 
         embed = create_op_update_embed(events.op_update)
         try:
             if is_webhook:
-                target.send(embed=embed, username="CS.RIN.RU Monitor")
+                safe_webhook_send(target, embed, username="CS.RIN.RU Monitor")
             else:
                 await target.send(embed=embed)
             logger.info(f"Sent OP update embed for topic {events.topic_id}")
         except Exception as e:
             logger.error(f"Failed to send OP update embed: {e}")
 
-    # 3. New posts (filtered by releases_only)
+    # 3. New posts (filtered by releases_only and csrin_cracks_bypasses_only)
     releases_only = config.get("releases_only", True)
+    cracks_only = config.get("csrin_cracks_bypasses_only", True)
 
     for post in events.new_posts:
         if monitor.is_post_seen(events.topic_id, post):
@@ -128,16 +131,33 @@ async def send_updates_to_target(target, events: TopicUpdateEvents, is_webhook: 
 
         release_label = None
         if releases_only:
-            is_rel, release_label = classify_release(post)
+            is_rel, release_label = classify_release(post, cracks_only=cracks_only)
             if not is_rel:
-                logger.info(f"Skipping non-release reply #{post.post_id} by {post.author} (releases_only is enabled)")
+                logger.info(f"Skipping non-crack/comment reply #{post.post_id} by {post.author}")
                 monitor.mark_post_seen(events.topic_id, post)
                 continue
+
+        # Extract metadata and links for deduplication
+        meta = extract_metadata(post.clean_markdown, post.topic_title)
+        rel_name = meta.get("release_name")
+        links = monitor.extract_download_links(post.clean_markdown)
+
+        # 1. Release signature deduplication (e.g. Game.Title.Crackfix-RUNE)
+        if rel_name and monitor.is_release_duplicate(events.topic_id, rel_name):
+            logger.info(f"Skipping duplicate release signature: {rel_name} in post #{post.post_id}")
+            monitor.mark_post_seen(events.topic_id, post)
+            continue
+
+        # 2. Download link deduplication (e.g. same pixeldrain/mega link re-quoted or reposted)
+        if links and monitor.is_link_duplicate(events.topic_id, links):
+            logger.info(f"Skipping post #{post.post_id} - all download links already posted for this game.")
+            monitor.mark_post_seen(events.topic_id, post)
+            continue
 
         embed = create_post_embed(post, release_label=release_label)
         try:
             if is_webhook:
-                target.send(embed=embed, username="CS.RIN.RU Monitor")
+                safe_webhook_send(target, embed, username="CS.RIN.RU Monitor")
             else:
                 await target.send(embed=embed)
             logger.info(f"Posted {'RELEASE: ' + release_label if release_label else 'post'} #{post.post_id} by {post.author} to Discord")
@@ -146,6 +166,10 @@ async def send_updates_to_target(target, events: TopicUpdateEvents, is_webhook: 
             logger.error(f"Failed to send post #{post.post_id}: {e}")
         finally:
             monitor.mark_post_seen(events.topic_id, post)
+            if rel_name:
+                monitor.mark_release_seen(events.topic_id, rel_name)
+            if links:
+                monitor.mark_links_seen(events.topic_id, links)
 
 
 async def send_new_thread_to_target(target, thread_info: dict, forum_id: str, is_webhook: bool = False):
@@ -153,7 +177,7 @@ async def send_new_thread_to_target(target, thread_info: dict, forum_id: str, is
     embed = create_new_thread_embed(thread_info, forum_id)
     try:
         if is_webhook:
-            target.send(embed=embed, username="CS.RIN.RU Monitor")
+            safe_webhook_send(target, embed, username="CS.RIN.RU Monitor")
         else:
             await target.send(embed=embed)
         logger.info(f"Posted new thread alert: {thread_info.get('title')}")
@@ -679,13 +703,31 @@ async def run_webhook_daemon(webhook_url: str):
                 if current_cfg.get("enable_global_feed", False):
                     logger.info("Checking CS.RIN.RU Global Live Feed (f=10 Main Forum)...")
                     feed_posts = await asyncio.to_thread(monitor.check_live_feed, "10")
+                    cracks_only = current_cfg.get("csrin_cracks_bypasses_only", True)
                     for post in feed_posts:
-                        is_rel, release_label = classify_release(post)
+                        is_rel, release_label = classify_release(post, cracks_only=cracks_only)
                         if not is_rel:
                             continue
+
+                        meta = extract_metadata(post.clean_markdown, post.topic_title)
+                        rel_name = meta.get("release_name")
+                        links = monitor.extract_download_links(post.clean_markdown)
+
+                        if rel_name and monitor.is_release_duplicate(post.topic_id, rel_name):
+                            logger.info(f"Skipping duplicate release signature: {rel_name}")
+                            continue
+
+                        if links and monitor.is_link_duplicate(post.topic_id, links):
+                            logger.info(f"Skipping global feed post #{post.post_id} - all download links already posted.")
+                            continue
+
                         embed = create_post_embed(post, release_label=release_label)
-                        webhook.send(embed=embed, username="CS.RIN.RU Monitor")
+                        safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
                         logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
+                        if rel_name:
+                            monitor.mark_release_seen(post.topic_id, rel_name)
+                        if links:
+                            monitor.mark_links_seen(post.topic_id, links)
 
             # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
             if current_cfg.get("watch_steam_versions", True):

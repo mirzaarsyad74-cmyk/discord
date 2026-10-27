@@ -137,17 +137,25 @@ def main():
                     continue
 
                 release_label = None
+                cracks_only = config.get("csrin_cracks_bypasses_only", True)
                 if releases_only:
-                    is_rel, release_label = classify_release(post)
+                    is_rel, release_label = classify_release(post, cracks_only=cracks_only)
                     if not is_rel:
                         monitor.mark_post_seen(t_id, post)
                         continue
 
-                # Release signature deduplication
+                # Release signature and download link deduplication
                 meta = extract_metadata(post.clean_markdown, post.topic_title)
                 rel_name = meta.get("release_name")
+                links = monitor.extract_download_links(post.clean_markdown)
+
                 if rel_name and monitor.is_release_duplicate(t_id, rel_name):
                     logger.info(f"Skipping duplicate release signature: {rel_name}")
+                    monitor.mark_post_seen(t_id, post)
+                    continue
+
+                if links and monitor.is_link_duplicate(t_id, links):
+                    logger.info(f"Skipping post #{post.post_id} - all download links already posted.")
                     monitor.mark_post_seen(t_id, post)
                     continue
 
@@ -157,6 +165,8 @@ def main():
                 monitor.mark_post_seen(t_id, post)
                 if rel_name:
                     monitor.mark_release_seen(t_id, rel_name)
+                if links:
+                    monitor.mark_links_seen(t_id, links)
 
     # 2. Process Subforums (CS.RIN.RU)
     if config.get("watch_csrin", False) and subforums:
@@ -174,18 +184,25 @@ def main():
     # 3. Global Live Feeds (CS.RIN.RU)
     if config.get("watch_csrin", False) and config.get("enable_global_feed", False):
         feed_ids = config.get("subforum_feeds", ["10"])
+        cracks_only = config.get("csrin_cracks_bypasses_only", True)
         for fid in feed_ids:
             logger.info(f"Checking CS.RIN.RU Global Live Feed (f={fid})...")
             feed_posts = monitor.check_live_feed(forum_id=fid)
             for post in feed_posts:
-                is_rel, release_label = classify_release(post)
+                is_rel, release_label = classify_release(post, cracks_only=cracks_only)
                 if not is_rel:
                     continue
 
                 meta = extract_metadata(post.clean_markdown, post.topic_title)
                 rel_name = meta.get("release_name")
+                links = monitor.extract_download_links(post.clean_markdown)
+
                 if rel_name and monitor.is_release_duplicate(post.topic_id, rel_name):
                     logger.info(f"Skipping duplicate release signature: {rel_name}")
+                    continue
+
+                if links and monitor.is_link_duplicate(post.topic_id, links):
+                    logger.info(f"Skipping global feed post #{post.post_id} - all download links already posted.")
                     continue
 
                 embed = create_post_embed(post, release_label=release_label)
@@ -193,6 +210,8 @@ def main():
                 logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
                 if rel_name:
                     monitor.mark_release_seen(post.topic_id, rel_name)
+                if links:
+                    monitor.mark_links_seen(post.topic_id, links)
 
     # 4. SteamRIP Watcher (Signature Royal Indigo Color - https://steamrip.com/)
     if config.get("watch_steamrip", False):

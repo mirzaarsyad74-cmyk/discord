@@ -41,13 +41,13 @@ COLOR_ONLINEFIX = 0x00E5FF   # Neon Electric Aqua / Cyan
 COLOR_WEMOD = 0x6366F1       # Electric Iris / Wand Indigo
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
-SUO_ICON = "https://raw.githubusercontent.com/ZackTheGrumpy/Website/refs/heads/main/logo.ico"
+SUO_ICON = "https://steamunlockonennabe.click/logo.ico"
 FITGIRL_ICON = "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg"
-DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2021/04/cropped-cropped-DODI-Repacks-Site-Icon-192x192.png"
+DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-192x192.png"
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
 STEAM_DEAL_ICON = "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png"
-ONLINEFIX_ICON = "https://online-fix.me/favicon.ico"
-WEMOD_ICON = "https://www.wemod.com/static/images/device-icons/favicon-0b9e908694.ico"
+ONLINEFIX_ICON = "https://online-fix.me/apple-touch-icon.png"
+WEMOD_ICON = "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png"
 
 SUO_GENRE_MAP = {
     0: "Unknown Genre",

@@ -313,6 +313,38 @@ class ForumMonitor:
             self.state["seen_release_signatures"] = sigs[-600:]
             self.save_state()
 
+    def extract_download_links(self, text: str) -> List[str]:
+        """Extracts normalized download URLs / magnets from post text for deduplication."""
+        patterns = [
+            r'magnet:\?xt=[a-zA-Z0-9:+%._-]+',
+            r'https?://(?:www\.)?(?:mega\.nz|pixeldrain\.com|1fichier\.com|gofile\.io|mediafire\.com|qiwi\.gg|rapidgator\.net|drive\.google\.com|multiup\.(?:org|io)|krakenfiles\.com|ddownload\.com|buzzheavier\.com|datanodes\.to)/[^\s)\]"\'>]+'
+        ]
+        links = []
+        for pat in patterns:
+            for match in re.findall(pat, text, re.IGNORECASE):
+                norm = match.rstrip(".,;!?'\"<>")
+                links.append(norm)
+        return list(dict.fromkeys(links))
+
+    def is_link_duplicate(self, topic_id: str, links: List[str]) -> bool:
+        """Returns True if ALL links in this post have already been broadcasted for this topic."""
+        if not links:
+            return False
+        seen_links = set(self.state.setdefault("seen_download_links", []))
+        return all(f"{topic_id}:{lnk.lower()}" in seen_links for lnk in links)
+
+    def mark_links_seen(self, topic_id: str, links: List[str]):
+        """Records download links so reposted mirrors and quote replies are ignored."""
+        if not links:
+            return
+        seen_links = self.state.setdefault("seen_download_links", [])
+        for lnk in links:
+            key = f"{topic_id}:{lnk.lower()}"
+            if key not in seen_links:
+                seen_links.append(key)
+        self.state["seen_download_links"] = seen_links[-1000:]
+        self.save_state()
+
     def check_fitgirl_updates(self) -> List[Dict[str, Any]]:
         """Checks for new FitGirl Repacks."""
         from external_monitors import check_fitgirl_feed
