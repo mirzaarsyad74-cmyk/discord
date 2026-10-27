@@ -8,9 +8,11 @@
   "watch_crackwatch_reddit": true,
   "watch_onlinefix": true,
   "watch_wemod": true,
-  "watch_csrin": false,
-  "enable_global_feed": false,
-  "subforum_feeds": [],
+  "watch_csrin": true,
+  "enable_global_feed": true,
+  "subforum_feeds": [
+    "10"
+  ],
   "topics": [],
   "subforums": [],
   "releases_only": true,
