@@ -362,14 +362,16 @@ DEFAULT_MONITOR_AVATARS: Dict[str, str] = {
     "WeMod / Wand": "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png",
     "SteamRIP Monitor": "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png",
     "SUO Wannabe Monitor": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/suo_icon.png",
-    "Steam Specials": "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png",
+    "Steam Specials": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_deals_icon.png",
+    "Steam Free Games": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_games_icon.png",
+    "Steam 100% Free Games": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_games_icon.png",
     "Steam Client Watch": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_gameoverlay_icon.png",
     "FitGirl Repacks": "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg",
     "DODI Repacks": "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-192x192.png",
     "Reddit CrackWatch": "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png",
     "Online-Fix.me": "https://online-fix.me/apple-touch-icon.png",
-    "CS.RIN.RU Monitor": "https://cs.rin.ru/favicon.ico",
-    "Release Monitor Bot": "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png",
+    "CS.RIN.RU Monitor": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/csrin_icon.png",
+    "Release Monitor Bot": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_deals_icon.png",
 }
 
 

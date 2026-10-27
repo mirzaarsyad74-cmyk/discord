@@ -39,13 +39,15 @@ COLOR_CRACKWATCH = 0xFF5722  # Reddit Vibrant Flame Orange
 COLOR_STEAM_DEAL = 0xE11D48  # Steam Sale Crimson / Discount Red
 COLOR_ONLINEFIX = 0x00E5FF   # Neon Electric Aqua / Cyan
 COLOR_WEMOD = 0x6366F1       # Electric Iris / Wand Indigo
+COLOR_STEAM_FREE = 0x9333EA  # Aesthetic Purple / Steam Free Violet
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
 SUO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/suo_icon.png"
 FITGIRL_ICON = "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg"
 DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-192x192.png"
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
-STEAM_DEAL_ICON = "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png"
+STEAM_DEAL_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_deals_icon.png"
+STEAM_FREE_GAMES_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_games_icon.png"
 ONLINEFIX_ICON = "https://online-fix.me/apple-touch-icon.png"
 WEMOD_ICON = "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png"
 
@@ -1594,3 +1596,185 @@ def create_steam_deal_embed(item: Dict[str, Any]):
 
     embed.set_footer(text="Steam Promotion Monitor • Prices in Malaysian Ringgit (MYR/RM) • GMT+8", icon_url=STEAM_DEAL_ICON)
     return embed
+
+
+def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
+    """
+    Checks for 100% Free Steam Games (Free to Keep, Normally Paid):
+    1. Direct Steam Store search specials with maxprice=free and specials=1 (100% discount promotions).
+    2. Reddit r/FreeGamesOnSteam RSS feed for community-reported giveaways and free claims.
+    Deduplicates strictly using seen keys stored in state['steam_free_games'].
+    """
+    free_state = state.setdefault("steam_free_games", {})
+    seen_keys = set(str(x) for x in free_state.get("seen_keys", []))
+
+    new_items = []
+    newly_seen_keys = []
+
+    # 1. Check Steam Official 100% Off Specials (Free to Keep)
+    steam_search_url = "https://store.steampowered.com/search/results/?query=&start=0&count=50&maxprice=free&specials=1&cc=my&l=en&infinite=1"
+    headers = {
+        "User-Agent": STANDARD_HEADERS["User-Agent"],
+        "Accept": "application/json"
+    }
+
+    try:
+        res = requests.get(steam_search_url, headers=headers, timeout=12)
+        if res.status_code == 200:
+            data = res.json()
+            html_text = data.get("results_html", "")
+            if html_text:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(html_text, "html.parser")
+                rows = soup.select("a.search_result_row")
+
+                for row in rows:
+                    app_id = row.get("data-ds-appid")
+                    if not app_id:
+                        pkg_id = row.get("data-ds-packageid")
+                        app_id = f"sub_{pkg_id}" if pkg_id else None
+
+                    title_el = row.select_one(".title")
+                    title = title_el.text.strip() if title_el else ""
+                    disc_el = row.select_one(".discount_pct")
+                    disc = disc_el.text.strip() if disc_el else ""
+                    orig_el = row.select_one(".discount_original_price")
+                    orig = orig_el.text.strip() if orig_el else "Free Promotion"
+                    final_el = row.select_one(".discount_final_price")
+                    final = final_el.text.strip() if final_el else "FREE"
+                    raw_link = row.get("href", "")
+                    clean_link = raw_link.split("?")[0] if raw_link else f"https://store.steampowered.com/app/{app_id}/"
+
+                    if not app_id or not title:
+                        continue
+
+                    deal_key = f"steam_{app_id}"
+                    if deal_key in seen_keys:
+                        continue
+
+                    # Header image
+                    header_img = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app_id}/header.jpg" if not str(app_id).startswith("sub_") else None
+                    if not header_img:
+                        img_el = row.select_one(".search_capsule img")
+                        header_img = img_el.get("src") if img_el else None
+
+                    item_obj = {
+                        "id": app_id,
+                        "title": title,
+                        "discount": disc or "100%",
+                        "original_price": orig,
+                        "final_price": final,
+                        "store_url": clean_link,
+                        "header_image": header_img,
+                        "source": "Steam Store (100% Off)",
+                        "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+                    }
+
+                    new_items.append(item_obj)
+                    seen_keys.add(deal_key)
+                    newly_seen_keys.append(deal_key)
+    except Exception as e:
+        logger.error(f"Error checking Steam store 100% specials: {e}")
+
+    # 2. Check Reddit r/FreeGamesOnSteam RSS Feed
+    FREEGAMES_RSS_URL = "https://www.reddit.com/r/FreeGamesOnSteam/new/.rss"
+    try:
+        import html
+        res_r = requests.get(FREEGAMES_RSS_URL, headers=REDDIT_HEADERS, timeout=12)
+        if res_r.status_code == 200:
+            entries = re.findall(r'<entry>(.*?)</entry>', res_r.text, re.DOTALL)
+            for e in entries:
+                id_m = re.search(r'<id>(.*?)</id>', e)
+                entry_id = id_m.group(1).strip() if id_m else ""
+                if not entry_id:
+                    continue
+
+                title_m = re.search(r'<title>(.*?)</title>', e)
+                title = html.unescape(title_m.group(1).strip()) if title_m else ""
+
+                # Ignore non-game discussion / sticky threads
+                if not title or "discussion thread" in title.lower():
+                    continue
+
+                content_m = re.search(r'<content[^>]*>(.*?)</content>', e, re.DOTALL)
+                content = html.unescape(content_m.group(1)) if content_m else ""
+
+                # Find steam store links inside content
+                steam_links = re.findall(r'https?://store\.steampowered\.com/(?:app|sub)/(\d+)/?', content)
+                app_id = steam_links[0] if steam_links else None
+
+                dedup_key = f"steam_{app_id}" if app_id else f"reddit_{entry_id}"
+                if dedup_key in seen_keys:
+                    continue
+
+                link_m = re.search(r'<link\s+href="([^"]+)"', e)
+                reddit_link = link_m.group(1).strip() if link_m else ""
+                store_url = f"https://store.steampowered.com/app/{app_id}/" if app_id else reddit_link
+
+                header_img = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app_id}/header.jpg" if app_id else None
+
+                item_obj = {
+                    "id": app_id or entry_id,
+                    "title": title,
+                    "discount": "100%",
+                    "original_price": "Free Giveaway",
+                    "final_price": "FREE (100% OFF)",
+                    "store_url": store_url,
+                    "header_image": header_img,
+                    "source": "r/FreeGamesOnSteam Giveaway",
+                    "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+                }
+
+                new_items.append(item_obj)
+                seen_keys.add(dedup_key)
+                newly_seen_keys.append(dedup_key)
+    except Exception as e:
+        logger.error(f"Error checking r/FreeGamesOnSteam: {e}")
+
+    # First run initialization (seed seen keys so we don't spam everything on first boot)
+    if "seen_keys" not in free_state and newly_seen_keys:
+        logger.info(f"Initializing Steam Free Games tracker with {len(newly_seen_keys)} existing promotions...")
+        free_state["seen_keys"] = update_seen_list([], newly_seen_keys, max_len=1000)
+        return []
+
+    if newly_seen_keys:
+        free_state["seen_keys"] = update_seen_list(free_state.get("seen_keys", []), newly_seen_keys, max_len=1000)
+
+    return new_items
+
+
+def create_steam_free_game_embed(item: Dict[str, Any]):
+    """Builds a rich Discord Embed for 100% Free Steam Games with Aesthetic Purple branding."""
+    import discord
+    name = item["title"]
+    store_url = item["store_url"]
+    disc = item.get("discount", "100%")
+    orig = item.get("original_price", "Paid Game")
+    final = item.get("final_price", "FREE")
+
+    embed = discord.Embed(
+        title=f"🎁 [100% FREE ON STEAM] {name}",
+        url=store_url,
+        color=COLOR_STEAM_FREE
+    )
+
+    if item.get("header_image"):
+        embed.set_image(url=item["header_image"])
+    embed.set_thumbnail(url=STEAM_FREE_GAMES_ICON)
+
+    embed.add_field(name="🎮 Game Title", value=f"**[{name}]({store_url})**", inline=False)
+    embed.add_field(name="🏷️ Promotion", value="**🔥 100% FREE TO KEEP**", inline=True)
+    embed.add_field(name="💵 Original Price", value=f"~~{orig}~~" if orig != "Free Giveaway" else f"*{orig}*", inline=True)
+    embed.add_field(name="💰 Promo Price", value="**`FREE / RM 0.00`**", inline=True)
+    embed.add_field(name="📡 Source", value=f"`{item.get('source', 'Steam Store')}`", inline=True)
+    embed.add_field(name="⏰ Discovered", value=f"`{item.get('time_kl', 'Now')}`", inline=True)
+
+    embed.add_field(
+        name="🛒 Steam Store Claim Link",
+        value=f"👉 **[Claim {name} for Free on Steam Store]({store_url})**",
+        inline=False
+    )
+
+    embed.set_footer(text="Steam Free Games Monitor • Free to Keep Forever • GMT+8", icon_url=STEAM_FREE_GAMES_ICON)
+    return embed
+

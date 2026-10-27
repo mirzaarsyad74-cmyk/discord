@@ -29,6 +29,7 @@ from external_monitors import (
     create_steamrip_embed,
     create_suo_embed,
     create_steam_deal_embed,
+    create_steam_free_game_embed,
     create_onlinefix_embed,
     create_wemod_embed
 )
@@ -242,6 +243,16 @@ def main():
                 embed = create_steam_deal_embed(upd)
                 safe_webhook_send(webhook, embed, username="Steam Specials")
                 logger.info(f"Posted Steam Deal: {upd['name']} (-{upd['discount_percent']}%)")
+
+    # 6b. Steam 100% Free Games Watcher (Free to Keep Forever)
+    if config.get("watch_steam_free_games", True):
+        logger.info("Checking for 100% Free Steam Games & Giveaways...")
+        free_updates = monitor.check_steam_free_games()
+        if free_updates:
+            for upd in free_updates:
+                embed = create_steam_free_game_embed(upd)
+                safe_webhook_send(webhook, embed, username="Steam Free Games")
+                logger.info(f"Posted Steam Free Game: {upd['title']}")
 
     # 7. Steam Client Version Watch (OpenSteam001/steam-monitor protobuf)
     if config.get("watch_steam_versions", True):

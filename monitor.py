@@ -470,6 +470,13 @@ class ForumMonitor:
         self.save_state()
         return updates
 
+    def check_steam_free_games(self) -> List[Dict[str, Any]]:
+        """Checks for 100% free Steam games and limited-time giveaways."""
+        from external_monitors import check_steam_free_games
+        updates = check_steam_free_games(self.state)
+        self.save_state()
+        return updates
+
 
 
     def remove_topic(self, topic_id: str):

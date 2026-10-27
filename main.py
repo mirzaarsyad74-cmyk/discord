@@ -53,6 +53,7 @@ def load_config() -> dict:
         "watch_steamrip": False,
         "watch_steamunlockonennabe": True,
         "watch_steam_deals": True,
+        "watch_steam_free_games": True,
         "watch_steam_versions": True,
         "watch_fitgirl": False,
         "watch_dodi": False,
@@ -259,6 +260,18 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking Steam deals: {e}")
 
+    # Check 100% Free Steam Games & Giveaways
+    if config.get("watch_steam_free_games", True):
+        try:
+            from external_monitors import create_steam_free_game_embed
+            logger.info("Checking 100% Free Steam Games & Giveaways...")
+            updates = await asyncio.to_thread(monitor.check_steam_free_games)
+            for upd in updates:
+                await channel.send(embed=create_steam_free_game_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking Steam free games: {e}")
+
+
     # Check monitored game topics (CS.RIN.RU)
     if config.get("watch_csrin", False):
         topics = config.get("topics", [])
@@ -371,6 +384,8 @@ async def on_ready():
         active_monitors.append("SUO Wannabe")
     if config.get("watch_steam_deals", True):
         active_monitors.append("Steam Deals (MYR)")
+    if config.get("watch_steam_free_games", True):
+        active_monitors.append("Steam Free Games")
     if config.get("watch_fitgirl", False):
         active_monitors.append("FitGirl")
     if config.get("watch_dodi", False):
@@ -555,6 +570,7 @@ async def cmd_status(ctx: commands.Context):
     embed.add_field(name="SteamRIP Monitor", value="**✅ ACTIVE (steamrip.com)**" if config.get("watch_steamrip", False) else "❌ Disabled", inline=True)
     embed.add_field(name="SUO Wannabe", value="**✅ ACTIVE (steamunlockonennabe.click)**" if config.get("watch_steamunlockonennabe", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Steam Specials (MYR)", value="**✅ ACTIVE (RM Pricing)**" if config.get("watch_steam_deals", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Steam Free Games", value="**✅ ACTIVE (100% Off / Keep Forever)**" if config.get("watch_steam_free_games", True) else "❌ Disabled", inline=True)
     embed.add_field(name="FitGirl Repacks", value="**✅ ACTIVE**" if config.get("watch_fitgirl", False) else "❌ Disabled", inline=True)
     embed.add_field(name="DODI Repacks", value="**✅ ACTIVE**" if config.get("watch_dodi", False) else "❌ Disabled", inline=True)
     embed.add_field(name="r/CrackWatch", value="**✅ ACTIVE**" if config.get("watch_crackwatch_reddit", True) else "❌ Disabled", inline=True)
@@ -684,6 +700,16 @@ async def run_webhook_daemon(webhook_url: str):
                 for upd in updates:
                     safe_webhook_send(webhook, create_steam_deal_embed(upd), username="Steam Specials")
                     logger.info(f"Posted Steam Deal: {upd['name']} (-{upd['discount_percent']}%)")
+
+            # Check 100% Free Steam Games & Giveaways
+            if current_cfg.get("watch_steam_free_games", True):
+                from external_monitors import create_steam_free_game_embed
+                logger.info("Checking 100% Free Steam Games & Giveaways...")
+                free_updates = await asyncio.to_thread(monitor.check_steam_free_games)
+                for upd in free_updates:
+                    safe_webhook_send(webhook, create_steam_free_game_embed(upd), username="Steam Free Games")
+                    logger.info(f"Posted Steam Free Game: {upd['title']}")
+
 
             if current_cfg.get("watch_csrin", False):
                 for topic_raw in active_topics:
@@ -877,6 +903,7 @@ def start_health_server():
                     ("SteamRIP", config.get("watch_steamrip", False)),
                     ("SUO Wannabe", config.get("watch_steamunlockonennabe", True)),
                     ("Steam Deals (MYR)", config.get("watch_steam_deals", True)),
+                    ("Steam Free Games", config.get("watch_steam_free_games", True)),
                     ("FitGirl", config.get("watch_fitgirl", False)),
                     ("DODI", config.get("watch_dodi", False)),
                     ("r/CrackWatch", config.get("watch_crackwatch_reddit", True)),
