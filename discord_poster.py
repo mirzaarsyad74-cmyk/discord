@@ -361,9 +361,9 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
 DEFAULT_MONITOR_AVATARS: Dict[str, str] = {
     "WeMod / Wand": "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png",
     "SteamRIP Monitor": "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png",
-    "SUO Wannabe Monitor": "https://steamunlockonennabe.click/logo.ico",
+    "SUO Wannabe Monitor": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/suo_icon.png",
     "Steam Specials": "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png",
-    "Steam Client Watch": "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png",
+    "Steam Client Watch": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_gameoverlay_icon.png",
     "FitGirl Repacks": "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg",
     "DODI Repacks": "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-192x192.png",
     "Reddit CrackWatch": "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png",

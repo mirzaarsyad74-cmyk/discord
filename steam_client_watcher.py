@@ -13,7 +13,7 @@ KL_TZ = timezone(timedelta(hours=8))  # Kuala Lumpur / Malaysia Time (UTC+08:00)
 STEAM_MONITOR_RAW_README = "https://raw.githubusercontent.com/OpenSteam001/steam-monitor/protobuf/README.md"
 STEAM_MONITOR_COMMITS_ATOM = "https://github.com/OpenSteam001/steam-monitor/commits/protobuf.atom"
 STEAM_MONITOR_REPO_URL = "https://github.com/OpenSteam001/steam-monitor/tree/protobuf"
-STEAM_LOGO_URL = "https://store.cloudflare.steamstatic.com/public/shared/images/responsive/share_steam_logo.png"
+STEAM_LOGO_URL = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_gameoverlay_icon.png"
 STEAM_CLIENT_NEWS_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=593110&count=10&maxlength=2000&format=json&feeds=steam_community_announcements"
 
 

@@ -41,7 +41,7 @@ COLOR_ONLINEFIX = 0x00E5FF   # Neon Electric Aqua / Cyan
 COLOR_WEMOD = 0x6366F1       # Electric Iris / Wand Indigo
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
-SUO_ICON = "https://steamunlockonennabe.click/logo.ico"
+SUO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/suo_icon.png"
 FITGIRL_ICON = "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg"
 DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-192x192.png"
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
