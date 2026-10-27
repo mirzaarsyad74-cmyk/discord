@@ -3,6 +3,7 @@ import re
 import json
 import hashlib
 import logging
+import urllib.parse
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import requests
@@ -27,6 +28,47 @@ class ForumMonitor:
         self.state_file = state_file
         self.state: Dict[str, Any] = self._load_state()
 
+    def _get_neon_connection_string(self) -> str:
+        """Resolves Neon PostgreSQL connection string from environment variables or config.json."""
+        conn_str = os.getenv("NEON_DATABASE_URL", "").strip() or os.getenv("DATABASE_URL", "").strip()
+        if not conn_str:
+            cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if os.path.exists(cfg_path):
+                try:
+                    with open(cfg_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                        conn_str = cfg.get("neon_database_url", "").strip() or cfg.get("database_url", "").strip()
+                except Exception:
+                    pass
+        return conn_str
+
+    def _query_neon(self, query: str, params: Optional[List[Any]] = None) -> Optional[Dict[str, Any]]:
+        """Executes a SQL query against Neon's serverless HTTP API without requiring PostgreSQL native drivers."""
+        conn_str = self._get_neon_connection_string()
+        if not conn_str:
+            return None
+        try:
+            parsed = urllib.parse.urlparse(conn_str)
+            host = parsed.hostname
+            if not host:
+                return None
+            endpoint = f"https://{host}/sql"
+            headers = {
+                "Neon-Connection-String": conn_str,
+                "Content-Type": "application/json"
+            }
+            payload: Dict[str, Any] = {"query": query}
+            if params is not None:
+                payload["params"] = params
+            res = requests.post(endpoint, headers=headers, json=payload, timeout=8)
+            if res.status_code == 200:
+                return res.json()
+            else:
+                logger.warning(f"Neon HTTP SQL returned HTTP {res.status_code}: {res.text[:120]}")
+        except Exception as e:
+            logger.warning(f"Error executing query on Neon: {e}")
+        return None
+
     def _get_supabase_credentials(self) -> Tuple[str, str]:
         """Resolves Supabase URL and Key from environment variables or config.json."""
         url = os.getenv("SUPABASE_URL", "").strip()
@@ -44,7 +86,29 @@ class ForumMonitor:
         return url, key
 
     def _load_state(self) -> Dict[str, Any]:
-        """Loads state from Supabase Cloud Database (if configured) or local state.json."""
+        """Loads state from Neon Cloud Database (primary), Supabase (fallback), or local state.json."""
+        # 1. Primary: Neon Cloud Database
+        if self._get_neon_connection_string():
+            try:
+                res_data = self._query_neon(
+                    "SELECT value FROM bot_state WHERE key = $1",
+                    params=["main_state"]
+                )
+                if res_data and "rows" in res_data and len(res_data["rows"]) > 0:
+                    cloud_state = res_data["rows"][0].get("value")
+                    if cloud_state and isinstance(cloud_state, dict):
+                        logger.info("⚡ Successfully loaded persistent bot state from Neon Cloud Database!")
+                        try:
+                            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+                            with open(self.state_file, "w", encoding="utf-8") as f:
+                                json.dump(cloud_state, f, indent=2, ensure_ascii=False)
+                        except Exception:
+                            pass
+                        return cloud_state
+            except Exception as e:
+                logger.warning(f"Could not load state from Neon, falling back: {e}")
+
+        # 2. Secondary Fallback: Supabase Cloud Database
         supa_url, supa_key = self._get_supabase_credentials()
         if supa_url and supa_key:
             try:
@@ -72,7 +136,7 @@ class ForumMonitor:
             except Exception as e:
                 logger.warning(f"Could not load state from Supabase, falling back to local file: {e}")
 
-        # Local fallback
+        # 3. Local fallback
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, "r", encoding="utf-8") as f:
@@ -82,7 +146,7 @@ class ForumMonitor:
         return {"topics": {}, "subforums": {}}
 
     def save_state(self):
-        """Saves state to local state.json and syncs to Supabase Cloud Database."""
+        """Saves state to local state.json and syncs to Neon Cloud Database (primary) and Supabase (fallback)."""
         # 1. Save local file cache
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
         try:
@@ -91,7 +155,21 @@ class ForumMonitor:
         except Exception as e:
             logger.error(f"Error writing state file: {e}")
 
-        # 2. Sync to Supabase Cloud Database
+        # 2. Primary: Sync to Neon Cloud Database
+        if self._get_neon_connection_string():
+            try:
+                upsert_q = (
+                    "INSERT INTO bot_state (key, value) "
+                    "VALUES ($1, $2::jsonb) "
+                    "ON CONFLICT (key) DO UPDATE "
+                    "SET value = EXCLUDED.value, updated_at = NOW() "
+                    "RETURNING key"
+                )
+                self._query_neon(upsert_q, params=["main_state", json.dumps(self.state)])
+            except Exception as e:
+                logger.warning(f"Failed to sync state to Neon: {e}")
+
+        # 3. Secondary Fallback: Sync to Supabase Cloud Database (if configured)
         supa_url, supa_key = self._get_supabase_credentials()
         if supa_url and supa_key:
             try:
@@ -111,6 +189,7 @@ class ForumMonitor:
                     logger.warning(f"Supabase sync status: {res.status_code}")
             except Exception as e:
                 logger.warning(f"Failed to sync state to Supabase: {e}")
+
 
     @staticmethod
     def compute_post_fingerprint(post: ForumPost) -> str:
