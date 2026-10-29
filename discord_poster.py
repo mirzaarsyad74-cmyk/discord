@@ -132,6 +132,8 @@ def scrub_ugly_content(text: str) -> str:
     text = re.sub(r'(?i)Line\s*number\s*On/Off\s*\|\s*Expand/Contract[^\n]*', '', text)
     text = re.sub(r'(?i)\bSelect\s+all\b', '', text)
     text = re.sub(r'\[\[Please login to see this link\.\]\]', '*(link protected on forum)*', text)
+    # Strip phpBB quote tags & bbcode remnants
+    text = re.sub(r'(?i)\[/?quote(?:=[^\]]*)?\]', '', text)
     # Strip phpBB Atom feed footer statistics
     text = re.sub(r'(?i)Statistics:\s*Posted\s*by[^\n]*', '', text)
     text = re.sub(r'(?i)\bPosted\s*by\s+[^\n—–-]+[—–-]\s*\d+\s*(?:minute|hour|sec|day)s?\s*ago[^\n]*', '', text)
@@ -205,8 +207,9 @@ def extract_metadata(text: str, topic_title: str) -> Dict[str, Any]:
     if not meta["group"] and re.search(r'\bvoices38\b', text, re.IGNORECASE):
         meta["group"] = "Voices38"
 
-    # 2. Extract version (v1.2.3 or 1.2.3 or Build 123456)
-    v_match = re.search(r'(?:^|[_\s.\-])v?(\d+\.\d+(?:\.\d+)?(?:[a-z])?)(?:[_\s.\-]|$$)', text, re.IGNORECASE)
+    # 2. Extract version (v1.2.3 or 1.2.3 or Build 123456), avoiding runtime tool versions (Proton, Wine, etc.)
+    text_clean_for_v = re.sub(r'(?i)\b(?:proton(?:ge)?|wine|geforce|nvidia|driver|directx|dlss|fsr)\s*(?:v?|\b)\d+(?:\.\d+)+', '', text)
+    v_match = re.search(r'(?:^|[_\s.\-])v?(\d+\.\d+(?:\.\d+)?(?:[a-z])?)(?:[_\s.\-]|$)', text_clean_for_v, re.IGNORECASE)
     if v_match:
         meta["version"] = f"v{v_match.group(1).lstrip('vV')}"
     else:

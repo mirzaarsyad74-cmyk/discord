@@ -190,8 +190,12 @@ def main():
             logger.info(f"Checking CS.RIN.RU Global Live Feed (f={fid})...")
             feed_posts = monitor.check_live_feed(forum_id=fid)
             for post in feed_posts:
+                if monitor.is_post_seen(post.topic_id, post):
+                    continue
+
                 is_rel, release_label = classify_release(post, cracks_only=cracks_only)
                 if not is_rel:
+                    monitor.mark_post_seen(post.topic_id, post)
                     continue
 
                 meta = extract_metadata(post.clean_markdown, post.topic_title)
@@ -200,15 +204,18 @@ def main():
 
                 if rel_name and monitor.is_release_duplicate(post.topic_id, rel_name):
                     logger.info(f"Skipping duplicate release signature: {rel_name}")
+                    monitor.mark_post_seen(post.topic_id, post)
                     continue
 
                 if links and monitor.is_link_duplicate(post.topic_id, links):
                     logger.info(f"Skipping global feed post #{post.post_id} - all download links already posted.")
+                    monitor.mark_post_seen(post.topic_id, post)
                     continue
 
                 embed = create_post_embed(post, release_label=release_label)
                 safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
                 logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
+                monitor.mark_post_seen(post.topic_id, post)
                 if rel_name:
                     monitor.mark_release_seen(post.topic_id, rel_name)
                 if links:

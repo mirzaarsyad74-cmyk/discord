@@ -199,24 +199,34 @@ class ForumMonitor:
         return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
     def is_post_seen(self, topic_id: str, post: ForumPost) -> bool:
-        """Double-check deduplication: checks both Post ID and Content Fingerprint."""
+        """Double-check deduplication: checks both Post ID and Content Fingerprint across topic and global feed."""
         topic_id = self.scraper.extract_topic_id(topic_id)
+        pid_str = str(post.post_id)
+        fp = self.compute_post_fingerprint(post)
+
+        # 1. Check topic state
         topic_state = self.state.get("topics", {}).get(topic_id, {})
-        
-        seen_pids = set(str(pid) for pid in topic_state.get("seen_post_ids", []))
-        if str(post.post_id) in seen_pids:
+        if pid_str in set(str(pid) for pid in topic_state.get("seen_post_ids", [])):
+            return True
+        if fp in set(topic_state.get("seen_fingerprints", [])):
             return True
 
-        seen_fingerprints = set(topic_state.get("seen_fingerprints", []))
-        fp = self.compute_post_fingerprint(post)
-        if fp in seen_fingerprints:
+        # 2. Check global feed state
+        feed_state = self.state.get("feed", {})
+        if pid_str in set(str(pid) for pid in feed_state.get("seen_post_ids", [])):
+            return True
+        if fp in set(feed_state.get("seen_fingerprints", [])):
             return True
 
         return False
 
     def mark_post_seen(self, topic_id: str, post: ForumPost):
-        """Immediately marks a post as seen and records its fingerprint."""
+        """Immediately marks a post as seen with preserved chronological ordering."""
         topic_id = self.scraper.extract_topic_id(topic_id)
+        pid_str = str(post.post_id)
+        fp = self.compute_post_fingerprint(post)
+
+        # Update topic state
         topics_state = self.state.setdefault("topics", {})
         topic_state = topics_state.setdefault(topic_id, {
             "title": "",
@@ -226,15 +236,28 @@ class ForumMonitor:
             "seen_fingerprints": []
         })
 
-        seen_pids = set(str(pid) for pid in topic_state.setdefault("seen_post_ids", []))
-        seen_pids.add(str(post.post_id))
-        topic_state["seen_post_ids"] = list(seen_pids)
+        seen_pids = [str(pid) for pid in topic_state.setdefault("seen_post_ids", [])]
+        if pid_str not in seen_pids:
+            seen_pids.append(pid_str)
+        topic_state["seen_post_ids"] = seen_pids[-500:]
 
-        seen_fps = set(topic_state.setdefault("seen_fingerprints", []))
-        seen_fps.add(self.compute_post_fingerprint(post))
-        # Keep latest 200 fingerprints to prevent infinite growth
-        topic_state["seen_fingerprints"] = list(seen_fps)[-200:]
-        
+        seen_fps = list(topic_state.setdefault("seen_fingerprints", []))
+        if fp not in seen_fps:
+            seen_fps.append(fp)
+        topic_state["seen_fingerprints"] = seen_fps[-300:]
+
+        # Also record in global feed state so global feed never duplicates it
+        feed_state = self.state.setdefault("feed", {})
+        feed_pids = [str(pid) for pid in feed_state.setdefault("seen_post_ids", [])]
+        if pid_str not in feed_pids:
+            feed_pids.append(pid_str)
+        feed_state["seen_post_ids"] = feed_pids[-1000:]
+
+        feed_fps = list(feed_state.setdefault("seen_fingerprints", []))
+        if fp not in feed_fps:
+            feed_fps.append(fp)
+        feed_state["seen_fingerprints"] = feed_fps[-600:]
+
         self.save_state()
 
     def check_topic(self, topic_id: str, is_first_run_init: bool = False) -> TopicUpdateEvents:
@@ -254,8 +277,17 @@ class ForumMonitor:
             "seen_fingerprints": []
         })
 
-        seen_pids = set(str(pid) for pid in topic_state.get("seen_post_ids", []))
-        seen_fps = set(topic_state.get("seen_fingerprints", []))
+        seen_pids_list = [str(pid) for pid in topic_state.get("seen_post_ids", [])]
+        seen_pids = set(seen_pids_list)
+        seen_fps_list = list(topic_state.get("seen_fingerprints", []))
+        seen_fps = set(seen_fps_list)
+
+        # Cross-reference global feed
+        feed_pids = set(str(pid) for pid in self.state.get("feed", {}).get("seen_post_ids", []))
+        feed_fps = set(self.state.get("feed", {}).get("seen_fingerprints", []))
+        seen_pids.update(feed_pids)
+        seen_fps.update(feed_fps)
+
         last_title = topic_state.get("title", "")
         last_op_hash = topic_state.get("op_hash", "")
         last_max_start = topic_state.get("max_start", 0)
@@ -319,13 +351,26 @@ class ForumMonitor:
                     found_new_posts.append(p)
                     seen_pids.add(p_id_str)
                     seen_fps.add(fp)
+                    if p_id_str not in seen_pids_list:
+                        seen_pids_list.append(p_id_str)
+                    if fp not in seen_fps_list:
+                        seen_fps_list.append(fp)
 
         # Update saved state
         topic_state["title"] = current_title
         topic_state["op_hash"] = current_op_hash
         topic_state["max_start"] = meta.max_start
-        topic_state["seen_post_ids"] = list(seen_pids)
-        topic_state["seen_fingerprints"] = list(seen_fps)[-200:]
+        topic_state["seen_post_ids"] = seen_pids_list[-500:]
+        topic_state["seen_fingerprints"] = seen_fps_list[-300:]
+
+        # Also add to feed state
+        feed_state = self.state.setdefault("feed", {})
+        feed_pids = [str(pid) for pid in feed_state.setdefault("seen_post_ids", [])]
+        for p in found_new_posts:
+            if str(p.post_id) not in feed_pids:
+                feed_pids.append(str(p.post_id))
+        feed_state["seen_post_ids"] = feed_pids[-1000:]
+
         self.save_state()
 
         # Sort posts by numeric ID so they are posted in chronological order
@@ -377,21 +422,29 @@ class ForumMonitor:
         """
         f_id = self.scraper.extract_forum_id(forum_id)
         feed_state = self.state.setdefault("feed", {})
-        seen_pids = set(str(pid) for pid in feed_state.setdefault("seen_post_ids", []))
-        seen_fps = set(feed_state.setdefault("seen_fingerprints", []))
+        seen_pids_list = [str(pid) for pid in feed_state.setdefault("seen_post_ids", [])]
+        seen_pids_set = set(seen_pids_list)
+        seen_fps_list = list(feed_state.setdefault("seen_fingerprints", []))
+        seen_fps_set = set(seen_fps_list)
 
         feed_posts = self.scraper.get_live_forum_feed(f_id)
         if not feed_posts:
             return []
 
         # If first run of live feed, mark current entries as seen to avoid posting old history
-        if not seen_pids:
+        if not seen_pids_set:
             logger.info("Initializing global live feed. Marking existing entries as seen...")
             for p in feed_posts:
-                seen_pids.add(str(p.post_id))
-                seen_fps.add(self.compute_post_fingerprint(p))
-            feed_state["seen_post_ids"] = list(seen_pids)
-            feed_state["seen_fingerprints"] = list(seen_fps)[-300:]
+                pid = str(p.post_id)
+                fp = self.compute_post_fingerprint(p)
+                if pid not in seen_pids_set:
+                    seen_pids_list.append(pid)
+                    seen_pids_set.add(pid)
+                if fp not in seen_fps_set:
+                    seen_fps_list.append(fp)
+                    seen_fps_set.add(fp)
+            feed_state["seen_post_ids"] = seen_pids_list[-1000:]
+            feed_state["seen_fingerprints"] = seen_fps_list[-600:]
             self.save_state()
             return []
 
@@ -399,13 +452,27 @@ class ForumMonitor:
         for p in feed_posts:
             p_id_str = str(p.post_id)
             fp = self.compute_post_fingerprint(p)
-            if p_id_str not in seen_pids and fp not in seen_fps:
-                new_items.append(p)
-                seen_pids.add(p_id_str)
-                seen_fps.add(fp)
 
-        feed_state["seen_post_ids"] = list(seen_pids)[-500:]
-        feed_state["seen_fingerprints"] = list(seen_fps)[-300:]
+            # Cross-check topic state if topic is tracked
+            topic_state = self.state.get("topics", {}).get(str(p.topic_id), {})
+            topic_pids = set(str(pid) for pid in topic_state.get("seen_post_ids", []))
+            topic_fps = set(topic_state.get("seen_fingerprints", []))
+
+            if p_id_str not in seen_pids_set and fp not in seen_fps_set and p_id_str not in topic_pids and fp not in topic_fps:
+                new_items.append(p)
+                seen_pids_list.append(p_id_str)
+                seen_pids_set.add(p_id_str)
+                seen_fps_list.append(fp)
+                seen_fps_set.add(fp)
+                
+                # Also mark seen in topic state if tracked
+                if p.topic_id and str(p.topic_id) in self.state.get("topics", {}):
+                    t_seen = self.state["topics"][str(p.topic_id)].setdefault("seen_post_ids", [])
+                    if p_id_str not in t_seen:
+                        t_seen.append(p_id_str)
+
+        feed_state["seen_post_ids"] = seen_pids_list[-1000:]
+        feed_state["seen_fingerprints"] = seen_fps_list[-600:]
         self.save_state()
         return new_items
 

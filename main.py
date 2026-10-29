@@ -217,15 +217,22 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
+bot_monitor_lock = asyncio.Lock()
+
 @tasks.loop(seconds=CHECK_INTERVAL)
 async def bot_monitor_task():
     """Background task running every interval to check for updates."""
-    if not DISCORD_CHANNEL_ID:
+    if bot_monitor_lock.locked():
+        logger.info("Previous monitor cycle still executing, skipping this tick to avoid duplicate runs.")
         return
-    channel = bot.get_channel(int(DISCORD_CHANNEL_ID))
-    if not channel:
-        logger.warning(f"Could not find Discord channel ID: {DISCORD_CHANNEL_ID}")
-        return
+
+    async with bot_monitor_lock:
+        if not DISCORD_CHANNEL_ID:
+            return
+        channel = bot.get_channel(int(DISCORD_CHANNEL_ID))
+        if not channel:
+            logger.warning(f"Could not find Discord channel ID: {DISCORD_CHANNEL_ID}")
+            return
 
     # Check SteamRIP (https://steamrip.com/ - Pre-installed Steam Games)
     if config.get("watch_steamrip", True):
@@ -296,16 +303,45 @@ async def bot_monitor_task():
 
         # Check Global Live Feed (all new games & Steam updates)
         if config.get("enable_global_feed", False):
-            try:
-                feed_posts = await asyncio.to_thread(monitor.check_live_feed, "10")
-                for post in feed_posts:
-                    is_rel, release_label = classify_release(post)
-                    if not is_rel:
-                        continue
-                    embed = create_post_embed(post, release_label=release_label)
-                    await channel.send(embed=embed)
-            except Exception as e:
-                logger.error(f"Error checking global live feed: {e}")
+            feed_ids = config.get("subforum_feeds", ["10"])
+            cracks_only = config.get("csrin_cracks_bypasses_only", True)
+            for fid in feed_ids:
+                try:
+                    feed_posts = await asyncio.to_thread(monitor.check_live_feed, fid)
+                    for post in feed_posts:
+                        if monitor.is_post_seen(post.topic_id, post):
+                            continue
+
+                        is_rel, release_label = classify_release(post, cracks_only=cracks_only)
+                        if not is_rel:
+                            monitor.mark_post_seen(post.topic_id, post)
+                            continue
+
+                        meta = extract_metadata(post.clean_markdown, post.topic_title)
+                        rel_name = meta.get("release_name")
+                        links = monitor.extract_download_links(post.clean_markdown)
+
+                        if rel_name and monitor.is_release_duplicate(post.topic_id, rel_name):
+                            logger.info(f"Skipping duplicate release signature: {rel_name}")
+                            monitor.mark_post_seen(post.topic_id, post)
+                            continue
+
+                        if links and monitor.is_link_duplicate(post.topic_id, links):
+                            logger.info(f"Skipping global feed post #{post.post_id} - all download links already posted.")
+                            monitor.mark_post_seen(post.topic_id, post)
+                            continue
+
+                        embed = create_post_embed(post, release_label=release_label)
+                        await channel.send(embed=embed)
+                        logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
+                        monitor.mark_post_seen(post.topic_id, post)
+                        if rel_name:
+                            monitor.mark_release_seen(post.topic_id, rel_name)
+                        if links:
+                            monitor.mark_links_seen(post.topic_id, links)
+                        await asyncio.sleep(1)
+                except Exception as e:
+                    logger.error(f"Error checking global live feed (f={fid}): {e}")
 
     # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
     if config.get("watch_steam_versions", True):
@@ -727,33 +763,42 @@ async def run_webhook_daemon(webhook_url: str):
 
                 # Check Global Live Feed (all new games & Steam updates)
                 if current_cfg.get("enable_global_feed", False):
-                    logger.info("Checking CS.RIN.RU Global Live Feed (f=10 Main Forum)...")
-                    feed_posts = await asyncio.to_thread(monitor.check_live_feed, "10")
+                    feed_ids = current_cfg.get("subforum_feeds", ["10"])
                     cracks_only = current_cfg.get("csrin_cracks_bypasses_only", True)
-                    for post in feed_posts:
-                        is_rel, release_label = classify_release(post, cracks_only=cracks_only)
-                        if not is_rel:
-                            continue
+                    for fid in feed_ids:
+                        logger.info(f"Checking CS.RIN.RU Global Live Feed (f={fid})...")
+                        feed_posts = await asyncio.to_thread(monitor.check_live_feed, fid)
+                        for post in feed_posts:
+                            if monitor.is_post_seen(post.topic_id, post):
+                                continue
 
-                        meta = extract_metadata(post.clean_markdown, post.topic_title)
-                        rel_name = meta.get("release_name")
-                        links = monitor.extract_download_links(post.clean_markdown)
+                            is_rel, release_label = classify_release(post, cracks_only=cracks_only)
+                            if not is_rel:
+                                monitor.mark_post_seen(post.topic_id, post)
+                                continue
 
-                        if rel_name and monitor.is_release_duplicate(post.topic_id, rel_name):
-                            logger.info(f"Skipping duplicate release signature: {rel_name}")
-                            continue
+                            meta = extract_metadata(post.clean_markdown, post.topic_title)
+                            rel_name = meta.get("release_name")
+                            links = monitor.extract_download_links(post.clean_markdown)
 
-                        if links and monitor.is_link_duplicate(post.topic_id, links):
-                            logger.info(f"Skipping global feed post #{post.post_id} - all download links already posted.")
-                            continue
+                            if rel_name and monitor.is_release_duplicate(post.topic_id, rel_name):
+                                logger.info(f"Skipping duplicate release signature: {rel_name}")
+                                monitor.mark_post_seen(post.topic_id, post)
+                                continue
 
-                        embed = create_post_embed(post, release_label=release_label)
-                        safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
-                        logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
-                        if rel_name:
-                            monitor.mark_release_seen(post.topic_id, rel_name)
-                        if links:
-                            monitor.mark_links_seen(post.topic_id, links)
+                            if links and monitor.is_link_duplicate(post.topic_id, links):
+                                logger.info(f"Skipping global feed post #{post.post_id} - all download links already posted.")
+                                monitor.mark_post_seen(post.topic_id, post)
+                                continue
+
+                            embed = create_post_embed(post, release_label=release_label)
+                            safe_webhook_send(webhook, embed, username="CS.RIN.RU Monitor")
+                            logger.info(f"Posted Global Feed [{release_label}] for {post.topic_title} #{post.post_id}")
+                            monitor.mark_post_seen(post.topic_id, post)
+                            if rel_name:
+                                monitor.mark_release_seen(post.topic_id, rel_name)
+                            if links:
+                                monitor.mark_links_seen(post.topic_id, links)
 
             # Check Steam Client Version Updates (OpenSteam001/steam-monitor)
             if current_cfg.get("watch_steam_versions", True):

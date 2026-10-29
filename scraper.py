@@ -175,8 +175,22 @@ class CsRinScraper:
         if not xml_data:
             return []
 
+        # Replace HTML entities that break strict XML parsers
+        clean_xml = re.sub(r'&nbsp;', '&#160;', xml_data)
+        clean_xml = re.sub(r'&bull;', '&#8226;', clean_xml)
+        clean_xml = re.sub(r'&hellip;', '&#8230;', clean_xml)
+        clean_xml = re.sub(r'&mdash;', '&#8212;', clean_xml)
+        clean_xml = re.sub(r'&ndash;', '&#8211;', clean_xml)
+        clean_xml = re.sub(r'&copy;', '&#169;', clean_xml)
+        clean_xml = re.sub(r'&reg;', '&#174;', clean_xml)
+        clean_xml = re.sub(r'&trade;', '&#8482;', clean_xml)
+        clean_xml = re.sub(r'&rsquo;', '&#8217;', clean_xml)
+        clean_xml = re.sub(r'&lsquo;', '&#8216;', clean_xml)
+        clean_xml = re.sub(r'&rdquo;', '&#8220;', clean_xml)
+        clean_xml = re.sub(r'&ldquo;', '&#8221;', clean_xml)
+
         try:
-            root = ET.fromstring(xml_data)
+            root = ET.fromstring(clean_xml)
         except Exception as e:
             logger.error(f"Failed to parse Atom feed XML: {e}")
             return []
@@ -395,9 +409,13 @@ class CsRinScraper:
             if parent:
                 parent.decompose()
 
+        # Convert line breaks first so text extraction preserves newlines
+        for br in root.find_all("br"):
+            br.replace_with(NavigableString("\n"))
+
         # Handle Quotes: <div class="quotetitle"><b>Author wrote:</b></div><div class="quotecontent">...</div>
         for quote_content in root.find_all("div", class_="quotecontent"):
-            quote_text = quote_content.get_text(strip=True)
+            quote_text = quote_content.get_text()
             # Find quote title if present
             title_tag = quote_content.find_previous_sibling("div", class_="quotetitle")
             author_text = title_tag.get_text(strip=True) if title_tag else "Quote:"
@@ -405,9 +423,16 @@ class CsRinScraper:
                 title_tag.decompose()
             
             # Convert to blockquote
-            bq_lines = [f"> {line}" for line in quote_text.splitlines() if line.strip()]
+            bq_lines = [f"> {line.strip()}" for line in quote_text.splitlines() if line.strip()]
             formatted_quote = f"\n> **{author_text}**\n" + "\n".join(bq_lines) + "\n"
             quote_content.replace_with(NavigableString(formatted_quote))
+
+        # Handle <blockquote> tags
+        for bq in root.find_all("blockquote"):
+            bq_text = bq.get_text()
+            bq_lines = [f"> {line.strip()}" for line in bq_text.splitlines() if line.strip()]
+            formatted_bq = "\n" + "\n".join(bq_lines) + "\n"
+            bq.replace_with(NavigableString(formatted_bq))
 
         # Clean all codetitle and quotetitle buttons / UI elements first
         for title_tag in root.find_all("div", class_=["codetitle", "quotetitle"]):

@@ -39,9 +39,10 @@ STEAM_VERSION_PATTERNS = [
 QUESTION_PATTERNS = [
     r'(?i)\b(?:any|when|where|is there|does anyone have|how to|can someone|can somebody|can anybody|will there be|anyone got|someone have|somebody have)\b.*\b(?:crack|repack|bypass|hypervisor|csf|update|clean steam files|files?)\b',
     r'(?i)\b(?:can|could|please|pls)\s+(?:someone|somebody|anybody|anyone)\s+(?:post|share|upload|send|provide|give|dump)\b',
+    r'(?i)\b(?:can\s+you\s+explain|i\s+don\'?t\s+understand|what\s+does\s+.*?\s+mean|how\s+did\s+you\s+(?:get|make|run))\b',
     r'(?i)\b(?:clean steam files|csf|crack|bypass|hypervisor|repack)\s*(?:when|eta|pls|please|\?)\b',
     r'(?i)\b(?:thanks?|thx|thank you|working|works|good job|tested|save game|anyone have this|tested on|confirm working)\b',
-    r'(?i)\b(?:not working|doesn\'?t work|wont work|won\'?t work|crash(?:es|ing)?|black screen|error|failed to launch)\b',
+    r'(?i)\b(?:not working|doesn\'?t work|wont work|won\'?t work|crash(?:es|ing)?|black screen|error|failed to launch|can\'?t (?:even )?launch|cannot launch|cant launch|won\'?t launch|doesn\'?t launch)\b',
     r'(?i)\b(?:request(?:ing)?|need|looking for|still waiting|any news|any update|no crack|no bypass)\b',
     r'(?i)\b(?:false positive|virus|trojan|malware|windows defender|antivirus)\b',
     r'(?i)\b(?:where (?:do i|to) (?:put|paste|copy)|how (?:do i|to) (?:run|install|apply))\b',
@@ -84,8 +85,10 @@ def classify_release(
     4. A Repack (FitGirl, ElAmigos, DODI, etc. - skipped if cracks_only=True)
     Returns (is_release: bool, release_type_label: Optional[str]).
     """
-    # 1. Strip blockquotes so we only inspect the author's new text (avoids matching quoted text)
-    own_text = re.sub(r'(?m)^>.*$', '', post.clean_markdown).strip()
+    # 1. Strip blockquotes and bbcode quotes so we only inspect the author's new text (avoids matching quoted text)
+    text_no_bbquote = re.sub(r'(?is)\[quote(?:=[^\]]*)?\].*?\[/quote\]?', '', post.clean_markdown)
+    text_no_bbquote = re.sub(r'(?i)\[/?quote(?:=[^\]]*)?\]', '', text_no_bbquote)
+    own_text = re.sub(r'(?m)^>.*$', '', text_no_bbquote).strip()
     if not own_text or len(own_text) < 10:
         return False, None
 
@@ -155,7 +158,7 @@ def classify_release(
 
     # 6. Detect Bypasses / Hypervisors (CRITICAL: Require proof of release so comments are rejected)
     if re.search(r'(?i)\b(?:hypervisor|bypass)\b', own_text):
-        if proof or post.is_op or author_lower == "voices38":
+        if proof or author_lower == "voices38":
             tag = f"{repacker_found or scene_found or ''} Bypass / Hypervisor".strip()
             return True, tag
         else:
@@ -166,7 +169,7 @@ def classify_release(
         return True, f"{repacker_found} Repack"
 
     # 8. Detect Scene Cracks (e.g. RUNE crack, FLT crack, or scene group with download links)
-    if scene_found and (re.search(r'(?i)\bcrack(?:ed|fix)?\b', own_text) or proof):
+    if scene_found and proof and (re.search(r'(?i)\bcrack(?:ed|fix)?\b', own_text) or proof):
         return True, f"{scene_found} Crack Release"
 
     # 9. Generic Scene release structure (e.g. Game.Name-GROUP)
