@@ -53,8 +53,9 @@ DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-1
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
 STEAM_DEAL_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_deals_icon.png"
 STEAM_FREE_GAMES_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_games_icon.png"
-DENUVO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/csrin_icon.png"
-STEAM_PATCH_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_gameoverlay_icon.png"
+DENUVO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/denuvo_icon.png"
+STEAM_PATCH_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_patch_icon.png"
+STEAM_FREE_WEEKEND_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_weekend_icon.png"
 ONLINEFIX_ICON = "https://online-fix.me/apple-touch-icon.png"
 WEMOD_ICON = "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png"
 
@@ -2227,7 +2228,7 @@ def create_steam_free_weekend_embed(item: Dict[str, Any]):
 
     if item.get("header_image"):
         embed.set_image(url=item["header_image"])
-    embed.set_thumbnail(url=STEAM_FREE_GAMES_ICON)
+    embed.set_thumbnail(url=STEAM_FREE_WEEKEND_ICON)
 
     embed.add_field(name="🎮 Game Title", value=f"**[{name}]({store_url})**", inline=False)
     embed.add_field(name="🏷️ Event", value="**🆓 Free to Play This Weekend**", inline=True)
@@ -2240,7 +2241,7 @@ def create_steam_free_weekend_embed(item: Dict[str, Any]):
         inline=False
     )
 
-    embed.set_footer(text="Steam Free Weekend Monitor • Temporary Full Game Trial • GMT+8", icon_url=STEAM_FREE_GAMES_ICON)
+    embed.set_footer(text="Steam Free Weekend Monitor • Temporary Full Game Trial • GMT+8", icon_url=STEAM_FREE_WEEKEND_ICON)
     return embed
 
 
