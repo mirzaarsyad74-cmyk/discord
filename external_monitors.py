@@ -41,6 +41,10 @@ COLOR_STEAM_DEAL = 0xE11D48  # Steam Sale Crimson / Discount Red
 COLOR_ONLINEFIX = 0x00E5FF   # Neon Electric Aqua / Cyan
 COLOR_WEMOD = 0x6366F1       # Electric Iris / Wand Indigo
 COLOR_STEAM_FREE = 0x9333EA  # Aesthetic Purple / Steam Free Violet
+COLOR_DENUVO_REMOVED = 0x10B981  # Emerald Green (Clean / Denuvo Removed)
+COLOR_DENUVO_ADDED = 0xEF4444    # Danger Crimson (Denuvo Added)
+COLOR_STEAM_PATCH = 0x38BDF8     # Steam Engine Sky Blue
+COLOR_FREE_WEEKEND = 0x06B6D4    # Electric Cyan
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
 SUO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/suo_icon.png"
@@ -49,6 +53,8 @@ DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-1
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
 STEAM_DEAL_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_deals_icon.png"
 STEAM_FREE_GAMES_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_games_icon.png"
+DENUVO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/csrin_icon.png"
+STEAM_PATCH_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_gameoverlay_icon.png"
 ONLINEFIX_ICON = "https://online-fix.me/apple-touch-icon.png"
 WEMOD_ICON = "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png"
 
@@ -1816,4 +1822,425 @@ def create_steam_free_game_embed(item: Dict[str, Any]):
 
     embed.set_footer(text="Steam Free Games Monitor • Free to Keep Forever • GMT+8", icon_url=STEAM_FREE_GAMES_ICON)
     return embed
+
+
+# ==============================================================================
+# 9. DENUVO REMOVAL & ADDITION TRACKER
+# ==============================================================================
+
+DEFAULT_DENUVO_WATCHLIST = [
+    {"appid": "2358720", "name": "Black Myth: Wukong"},
+    {"appid": "2161700", "name": "Persona 3 Reload"},
+    {"appid": "1237320", "name": "Sonic Frontiers"},
+    {"appid": "1693980", "name": "Dead Space"},
+    {"appid": "2072450", "name": "Like a Dragon: Infinite Wealth"},
+    {"appid": "2054970", "name": "Dragon's Dogma 2"},
+    {"appid": "1774580", "name": "Star Wars Jedi: Survivor"},
+    {"appid": "1888930", "name": "Suicide Squad: Kill the Justice League"},
+    {"appid": "2246340", "name": "Shin Megami Tensei V: Vengeance"},
+    {"appid": "2124490", "name": "Silent Hill 2 Remake"},
+    {"appid": "1627720", "name": "Lies of P"}
+]
+
+
+def check_denuvo_status(state: dict, watchlist: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
+    """
+    Tracks Denuvo Anti-Tamper removals and stealth additions across PC games:
+    1. Real-time Reddit r/CrackWatch verified Denuvo removal announcements.
+    2. Direct Steam Store API drm_notice monitoring against the curated Denuvo watchlist.
+    """
+    denuvo_state = state.setdefault("denuvo_status", {})
+    known_drm = denuvo_state.setdefault("known_drm", {})
+    seen_keys = set(str(k) for k in denuvo_state.get("seen_keys", []))
+
+    new_items: List[Dict[str, Any]] = []
+    newly_seen_keys: List[str] = []
+
+    # 1. Check Reddit r/CrackWatch for verified Denuvo Removal announcements
+    try:
+        xml_data = fetch_reddit_feed("https://www.reddit.com/r/CrackWatch/search.rss?q=%22Denuvo+Removed%22&restrict_sr=on&sort=new")
+        if xml_data:
+            soup = BeautifulSoup(xml_data, "html.parser")
+            for entry in soup.find_all("entry"):
+                title_tag = entry.find("title")
+                id_tag = entry.find("id")
+                link_tag = entry.find("link")
+                content_tag = entry.find("content")
+
+                if not title_tag or not id_tag:
+                    continue
+
+                raw_title = title_tag.get_text(strip=True)
+                entry_id = id_tag.get_text(strip=True)
+                url = link_tag.get("href", "") if link_tag else ""
+                content_html = content_tag.get_text() if content_tag else ""
+
+                # Check if title indicates a Denuvo removal
+                m = re.search(r'(?i)(?:denuvo\s+(?:has\s+been\s+)?removed\s+(?:from|in)\s+|\[denuvo\s+removed\]\s*)(.+)', raw_title)
+                if not m:
+                    continue
+
+                game_raw = m.group(1).strip()
+                clean_name = re.sub(r'(?i)(?:steam\s+version\s+of\s+|gog\s+version\s+of\s+|pc\s+version\s+of\s+)', '', game_raw).strip()
+                clean_name = re.sub(r'[\(\[].*?[\)\]]', '', clean_name).strip()
+
+                dedup_key = f"cw_denuvo_{clean_name.lower()}"
+                if dedup_key in seen_keys:
+                    continue
+
+                app_id = None
+                app_m = re.search(r'store\.steampowered\.com/app/(\d+)', content_html)
+                if app_m:
+                    app_id = app_m.group(1)
+
+                header_img = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app_id}/header.jpg" if app_id else None
+                store_url = f"https://store.steampowered.com/app/{app_id}/" if app_id else url
+
+                new_items.append({
+                    "event_type": "removed",
+                    "title": clean_name,
+                    "app_id": app_id,
+                    "status_desc": "🔓 Denuvo Anti-Tamper Removed (Now DRM-Free)",
+                    "source": "Reddit r/CrackWatch Verified Announcement",
+                    "store_url": store_url,
+                    "header_image": header_img,
+                    "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+                })
+                seen_keys.add(dedup_key)
+                newly_seen_keys.append(dedup_key)
+    except Exception as e:
+        logger.error(f"Error checking r/CrackWatch Denuvo removals: {e}")
+
+    # 2. Check Steam Store API for watchlist games
+    active_watchlist = watchlist if watchlist else DEFAULT_DENUVO_WATCHLIST
+    is_first_init = not bool(known_drm)
+
+    for game in active_watchlist:
+        aid = str(game.get("appid", "")).strip()
+        gname = game.get("name", f"App {aid}")
+        if not aid:
+            continue
+
+        try:
+            res = requests.get(f"https://store.steampowered.com/api/appdetails?appids={aid}&l=en", timeout=8)
+            if res.status_code != 200:
+                continue
+            data = res.json().get(aid, {}).get("data", {})
+            if not data:
+                continue
+
+            drm_notice = data.get("drm_notice", "") or ""
+            has_denuvo = "denuvo" in drm_notice.lower()
+            current_status = "Denuvo" if has_denuvo else "Clean"
+            header_img = data.get("header_image")
+
+            # First run: seed state
+            if is_first_init or aid not in known_drm:
+                known_drm[aid] = current_status
+                continue
+
+            last_status = known_drm.get(aid)
+            if last_status == "Denuvo" and current_status == "Clean":
+                dedup_key = f"steam_denuvo_removed_{aid}"
+                if dedup_key not in seen_keys:
+                    new_items.append({
+                        "event_type": "removed",
+                        "title": data.get("name", gname),
+                        "app_id": aid,
+                        "status_desc": "🔓 Denuvo Anti-Tamper Removed from Steam Executable!",
+                        "source": "Steam Store Official API",
+                        "store_url": f"https://store.steampowered.com/app/{aid}/",
+                        "header_image": header_img,
+                        "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+                    })
+                    seen_keys.add(dedup_key)
+                    newly_seen_keys.append(dedup_key)
+                known_drm[aid] = "Clean"
+
+            elif last_status == "Clean" and current_status == "Denuvo":
+                dedup_key = f"steam_denuvo_added_{aid}"
+                if dedup_key not in seen_keys:
+                    new_items.append({
+                        "event_type": "added",
+                        "title": data.get("name", gname),
+                        "app_id": aid,
+                        "status_desc": "🔒 Denuvo Anti-Tamper Added to Game Store Page!",
+                        "source": "Steam Store Official API",
+                        "store_url": f"https://store.steampowered.com/app/{aid}/",
+                        "header_image": header_img,
+                        "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+                    })
+                    seen_keys.add(dedup_key)
+                    newly_seen_keys.append(dedup_key)
+                known_drm[aid] = "Denuvo"
+
+        except Exception as e:
+            logger.debug(f"Error checking Steam DRM for app {aid}: {e}")
+
+    # Seed on first boot to prevent spamming historical announcements
+    if "seen_keys" not in denuvo_state and newly_seen_keys:
+        logger.info(f"Initializing Denuvo Tracker with {len(newly_seen_keys)} historical items...")
+        denuvo_state["seen_keys"] = update_seen_list([], newly_seen_keys, max_len=600)
+        return []
+
+    if newly_seen_keys:
+        denuvo_state["seen_keys"] = update_seen_list(denuvo_state.get("seen_keys", []), newly_seen_keys, max_len=600)
+
+    return new_items
+
+
+def create_denuvo_embed(item: Dict[str, Any]):
+    """Builds an alert embed when Denuvo is removed or added to a game."""
+    import discord
+    name = item["title"]
+    store_url = item["store_url"]
+    event_type = item.get("event_type", "removed")
+    is_removed = event_type == "removed"
+
+    embed = discord.Embed(
+        title=f"{'🔓' if is_removed else '🔒'} [DENUVO {'REMOVED' if is_removed else 'ADDED'}] {name}",
+        url=store_url,
+        color=COLOR_DENUVO_REMOVED if is_removed else COLOR_DENUVO_ADDED
+    )
+
+    if item.get("header_image"):
+        embed.set_image(url=item["header_image"])
+    embed.set_thumbnail(url=DENUVO_ICON)
+
+    embed.add_field(name="🎮 Game Title", value=f"**[{name}]({store_url})**", inline=False)
+    embed.add_field(name="🛡️ DRM Status", value=f"**{item.get('status_desc')}**", inline=False)
+    embed.add_field(name="📡 Verified Source", value=f"`{item.get('source')}`", inline=True)
+    if item.get("app_id"):
+        embed.add_field(name="🆔 Steam AppID", value=f"`{item['app_id']}`", inline=True)
+    embed.add_field(name="⏰ Discovered", value=f"`{item.get('time_kl', 'Now')}`", inline=True)
+
+    embed.set_footer(text="Denuvo Watch • Game DRM & Crack Status • GMT+8", icon_url=DENUVO_ICON)
+    return embed
+
+
+# ==============================================================================
+# 10. STEAM APP DEPOTS & PATCH WATCHER
+# ==============================================================================
+
+DEFAULT_STEAM_PATCH_APPS = [
+    {"appid": "2358720", "name": "Black Myth: Wukong"},
+    {"appid": "1627720", "name": "Lies of P"},
+    {"appid": "2161700", "name": "Persona 3 Reload"},
+    {"appid": "1237320", "name": "Sonic Frontiers"},
+    {"appid": "2054970", "name": "Dragon's Dogma 2"}
+]
+
+
+def check_steam_app_patches(state: dict, monitored_apps: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
+    """
+    Monitors high-profile Steam apps for major patch notes, version updates, and depot changes
+    using the official Steam Community Announcements API.
+    """
+    patch_state = state.setdefault("steam_app_patches", {})
+    last_dates = patch_state.setdefault("last_dates", {})
+    apps_to_check = monitored_apps if monitored_apps else DEFAULT_STEAM_PATCH_APPS
+
+    new_patches: List[Dict[str, Any]] = []
+
+    for app in apps_to_check:
+        aid = str(app.get("appid", "")).strip()
+        gname = app.get("name", f"App {aid}")
+        if not aid:
+            continue
+
+        last_date = int(last_dates.get(aid, 0))
+        url = f"https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid={aid}&count=4&feeds=steam_community_announcements"
+
+        try:
+            res = requests.get(url, timeout=8)
+            if res.status_code != 200:
+                continue
+            data = res.json()
+            items = data.get("appnews", {}).get("newsitems", [])
+
+            if last_date == 0 and items:
+                last_dates[aid] = max(int(it.get("date", 0)) for it in items)
+                continue
+
+            max_date = last_date
+            for it in items:
+                p_date = int(it.get("date", 0))
+                if p_date <= last_date:
+                    continue
+
+                title = it.get("title", "Game Update")
+                if not re.search(r'(?i)\b(?:patch|update|hotfix|version|v\d|build|notes|maintenance|changelog)\b', title):
+                    continue
+
+                if p_date > max_date:
+                    max_date = p_date
+
+                raw_contents = it.get("contents", "")
+                clean_contents = re.sub(r'\[/?(?:h1|h2|h3|b|i|u|list|\*|p|img|url)[^\]]*\]', '', raw_contents)
+                clean_contents = re.sub(r'\{STEAM_CLAN_IMAGE\}/[^\s)]+', '', clean_contents)
+                clean_contents = re.sub(r'\s+', ' ', clean_contents).strip()
+                snippet = clean_contents[:250] + "..." if len(clean_contents) > 250 else clean_contents
+
+                dt_kl = datetime.fromtimestamp(p_date, tz=timezone.utc).astimezone(KL_TZ)
+                time_kl = dt_kl.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+
+                new_patches.append({
+                    "appid": aid,
+                    "game_name": gname,
+                    "patch_title": title,
+                    "title": f"{gname} - {title}",
+                    "snippet": snippet,
+                    "url": it.get("url", f"https://store.steampowered.com/news/app/{aid}"),
+                    "header_image": f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{aid}/header.jpg",
+                    "time_kl": time_kl
+                })
+
+            last_dates[aid] = max_date
+
+        except Exception as e:
+            logger.debug(f"Error checking Steam patches for app {aid}: {e}")
+
+    return new_patches
+
+
+def create_steam_patch_embed(item: Dict[str, Any]):
+    """Builds a rich Discord Embed for Steam App Patch & Depot updates."""
+    import discord
+    gname = item.get("game_name", "Game")
+    title = item.get("patch_title") or item.get("title", "Game Update")
+    patch_url = item.get("url", "")
+    aid = item.get("appid")
+
+    embed = discord.Embed(
+        title=f"⚙️ [{gname}] {title}",
+        url=patch_url,
+        color=COLOR_STEAM_PATCH
+    )
+
+    if item.get("header_image"):
+        embed.set_image(url=item["header_image"])
+    embed.set_thumbnail(url=STEAM_PATCH_ICON)
+
+    embed.add_field(name="🎮 Game", value=f"**[{gname}](https://store.steampowered.com/app/{aid}/)**", inline=True)
+    embed.add_field(name="🆔 AppID", value=f"`{aid}`", inline=True)
+    embed.add_field(name="⏰ Released", value=f"`{item.get('time_kl')}`", inline=True)
+
+    if item.get("snippet"):
+        embed.add_field(name="📋 Update Summary / Notes", value=item["snippet"], inline=False)
+
+    embed.add_field(
+        name="🔗 Read Full Patch Notes",
+        value=f"👉 **[Open Patch Notes on Steam]({patch_url})**",
+        inline=False
+    )
+
+    embed.set_footer(text="Steam App Patch & Depot Watcher • GMT+8", icon_url=STEAM_PATCH_ICON)
+    return embed
+
+
+# ==============================================================================
+# 11. STEAM FREE WEEKEND ALERTS
+# ==============================================================================
+
+def check_steam_free_weekends(state: dict) -> List[Dict[str, Any]]:
+    """
+    Monitors Steam Free Weekend promotions:
+    1. Reddit r/FreeGameFindings & r/FreeGamesOnSteam for verified Free Weekend announcements.
+    """
+    fw_state = state.setdefault("steam_free_weekends", {})
+    seen_keys = set(str(k) for k in fw_state.get("seen_keys", []))
+
+    new_items: List[Dict[str, Any]] = []
+    newly_seen_keys: List[str] = []
+
+    try:
+        xml_data = fetch_reddit_feed("https://www.reddit.com/r/FreeGameFindings/search.rss?q=Steam+Free+Weekend&restrict_sr=on&sort=new")
+        if xml_data:
+            soup = BeautifulSoup(xml_data, "html.parser")
+            for entry in soup.find_all("entry"):
+                title_tag = entry.find("title")
+                id_tag = entry.find("id")
+                link_tag = entry.find("link")
+                content_tag = entry.find("content")
+
+                if not title_tag or not id_tag:
+                    continue
+
+                raw_title = title_tag.get_text(strip=True)
+                entry_id = id_tag.get_text(strip=True)
+                post_url = link_tag.get("href", "") if link_tag else ""
+                content_html = content_tag.get_text() if content_tag else ""
+
+                if "free weekend" not in raw_title.lower() or "steam" not in raw_title.lower():
+                    continue
+
+                dedup_key = f"fw_{entry_id}"
+                if dedup_key in seen_keys:
+                    continue
+
+                clean_name = re.sub(r'\[.*?\]|\(.*?\)', '', raw_title)
+                clean_name = re.sub(r'(?i)\bfree\s+weekend\b', '', clean_name).strip()
+
+                app_id = None
+                app_m = re.search(r'store\.steampowered\.com/app/(\d+)', content_html)
+                if app_m:
+                    app_id = app_m.group(1)
+
+                store_url = f"https://store.steampowered.com/app/{app_id}/" if app_id else post_url
+                header_img = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app_id}/header.jpg" if app_id else None
+
+                new_items.append({
+                    "title": clean_name or raw_title,
+                    "app_id": app_id,
+                    "store_url": store_url,
+                    "header_image": header_img,
+                    "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+                })
+                seen_keys.add(dedup_key)
+                newly_seen_keys.append(dedup_key)
+    except Exception as e:
+        logger.error(f"Error checking Steam Free Weekends: {e}")
+
+    # Seed on first boot
+    if "seen_keys" not in fw_state and newly_seen_keys:
+        logger.info(f"Initializing Steam Free Weekends with {len(newly_seen_keys)} existing promotions...")
+        fw_state["seen_keys"] = update_seen_list([], newly_seen_keys, max_len=600)
+        return []
+
+    if newly_seen_keys:
+        fw_state["seen_keys"] = update_seen_list(fw_state.get("seen_keys", []), newly_seen_keys, max_len=600)
+
+    return new_items
+
+
+def create_steam_free_weekend_embed(item: Dict[str, Any]):
+    """Builds a rich Discord Embed for Steam Free Weekend events."""
+    import discord
+    name = item["title"]
+    store_url = item["store_url"]
+
+    embed = discord.Embed(
+        title=f"🎉 [STEAM FREE WEEKEND] {name}",
+        url=store_url,
+        color=COLOR_FREE_WEEKEND
+    )
+
+    if item.get("header_image"):
+        embed.set_image(url=item["header_image"])
+    embed.set_thumbnail(url=STEAM_FREE_GAMES_ICON)
+
+    embed.add_field(name="🎮 Game Title", value=f"**[{name}]({store_url})**", inline=False)
+    embed.add_field(name="🏷️ Event", value="**🆓 Free to Play This Weekend**", inline=True)
+    embed.add_field(name="💻 Platform", value="**`Steam (PC)`**", inline=True)
+    embed.add_field(name="⏰ Discovered", value=f"`{item.get('time_kl', 'Now')}`", inline=True)
+
+    embed.add_field(
+        name="🚀 Play Now on Steam",
+        value=f"👉 **[Download & Play {name} on Steam]({store_url})**",
+        inline=False
+    )
+
+    embed.set_footer(text="Steam Free Weekend Monitor • Temporary Full Game Trial • GMT+8", icon_url=STEAM_FREE_GAMES_ICON)
+    return embed
+
 

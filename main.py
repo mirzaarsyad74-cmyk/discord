@@ -55,6 +55,9 @@ def load_config() -> dict:
         "watch_steam_deals": True,
         "watch_steam_free_games": True,
         "watch_steam_versions": True,
+        "watch_denuvo_status": True,
+        "watch_steam_app_patches": True,
+        "watch_steam_free_weekends": True,
         "watch_fitgirl": False,
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
@@ -203,6 +206,9 @@ def create_startup_test_embed():
     embed.add_field(name="🎮 Online-Fix.me", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="🪄 WeMod / Wand", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="⚙️ Steam Client Updates", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🛡️ Denuvo Tracker", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="📦 Steam App Patches", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🎉 Steam Free Weekends", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="⚡ 24/7 Keep-Alive", value="`✅ Armed & Running`", inline=True)
     embed.set_footer(text="Game Release Monitor • Live Startup Test • GMT+8")
     return embed
@@ -277,6 +283,39 @@ async def bot_monitor_task():
                 await channel.send(embed=create_steam_free_game_embed(upd))
         except Exception as e:
             logger.error(f"Error checking Steam free games: {e}")
+
+    # Check Denuvo Status & Removal Tracker
+    if config.get("watch_denuvo_status", True):
+        try:
+            from external_monitors import create_denuvo_embed
+            logger.info("Checking Denuvo Status & Removal Tracker...")
+            denuvo_updates = await asyncio.to_thread(monitor.check_denuvo_status, config.get("denuvo_watchlist"))
+            for upd in denuvo_updates:
+                await channel.send(embed=create_denuvo_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking Denuvo status: {e}")
+
+    # Check Steam App Patches & Depots
+    if config.get("watch_steam_app_patches", True):
+        try:
+            from external_monitors import create_steam_patch_embed
+            logger.info("Checking Steam App Patches & Announcements...")
+            patch_updates = await asyncio.to_thread(monitor.check_steam_app_patches, config.get("monitored_steam_apps"))
+            for upd in patch_updates:
+                await channel.send(embed=create_steam_patch_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking Steam app patches: {e}")
+
+    # Check Steam Free Weekends
+    if config.get("watch_steam_free_weekends", True):
+        try:
+            from external_monitors import create_steam_free_weekend_embed
+            logger.info("Checking Steam Free Weekend promotions...")
+            fw_updates = await asyncio.to_thread(monitor.check_steam_free_weekends)
+            for upd in fw_updates:
+                await channel.send(embed=create_steam_free_weekend_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking Steam Free Weekends: {e}")
 
 
     # Check monitored game topics (CS.RIN.RU)
@@ -434,6 +473,12 @@ async def on_ready():
         active_monitors.append("WeMod (Wand)")
     if config.get("watch_steam_versions", True):
         active_monitors.append("Steam Client")
+    if config.get("watch_denuvo_status", True):
+        active_monitors.append("Denuvo Tracker")
+    if config.get("watch_steam_app_patches", True):
+        active_monitors.append("Steam App Patches")
+    if config.get("watch_steam_free_weekends", True):
+        active_monitors.append("Steam Free Weekends")
     if config.get("watch_csrin", False):
         active_monitors.append(f"CS.RIN.RU ({len(config.get('topics', []))} topics)")
 
@@ -507,6 +552,24 @@ async def cmd_check(ctx: commands.Context):
         for upd in await asyncio.to_thread(monitor.check_wemod_updates):
             total_new += 1
             await ctx.send(embed=create_wemod_embed(upd))
+
+    if config.get("watch_denuvo_status", True):
+        from external_monitors import create_denuvo_embed
+        for upd in await asyncio.to_thread(monitor.check_denuvo_status, config.get("denuvo_watchlist")):
+            total_new += 1
+            await ctx.send(embed=create_denuvo_embed(upd))
+
+    if config.get("watch_steam_app_patches", True):
+        from external_monitors import create_steam_patch_embed
+        for upd in await asyncio.to_thread(monitor.check_steam_app_patches, config.get("monitored_steam_apps")):
+            total_new += 1
+            await ctx.send(embed=create_steam_patch_embed(upd))
+
+    if config.get("watch_steam_free_weekends", True):
+        from external_monitors import create_steam_free_weekend_embed
+        for upd in await asyncio.to_thread(monitor.check_steam_free_weekends):
+            total_new += 1
+            await ctx.send(embed=create_steam_free_weekend_embed(upd))
 
     if config.get("watch_csrin", False):
         topics = config.get("topics", [])
@@ -611,6 +674,9 @@ async def cmd_status(ctx: commands.Context):
     embed.add_field(name="DODI Repacks", value="**✅ ACTIVE**" if config.get("watch_dodi", False) else "❌ Disabled", inline=True)
     embed.add_field(name="r/CrackWatch", value="**✅ ACTIVE**" if config.get("watch_crackwatch_reddit", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Steam Client Watch", value="**✅ ACTIVE**" if config.get("watch_steam_versions", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Denuvo Tracker", value="**✅ ACTIVE**" if config.get("watch_denuvo_status", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Steam App Patches", value="**✅ ACTIVE**" if config.get("watch_steam_app_patches", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Steam Free Weekends", value="**✅ ACTIVE**" if config.get("watch_steam_free_weekends", True) else "❌ Disabled", inline=True)
     embed.add_field(name="CS.RIN.RU", value="❌ **REMOVED**" if not config.get("watch_csrin", False) else f"✅ Active ({len(config.get('topics', []))} topics)", inline=True)
     embed.add_field(name="Check Interval", value=f"`{CHECK_INTERVAL}` seconds", inline=True)
     embed.set_footer(text=f"Serving channel: #{ctx.channel.name}")
@@ -745,6 +811,33 @@ async def run_webhook_daemon(webhook_url: str):
                 for upd in free_updates:
                     safe_webhook_send(webhook, create_steam_free_game_embed(upd), username="Steam Free Games")
                     logger.info(f"Posted Steam Free Game: {upd['title']}")
+
+            # Check Denuvo Status & Removal Tracker
+            if current_cfg.get("watch_denuvo_status", True):
+                from external_monitors import create_denuvo_embed
+                logger.info("Checking Denuvo Status & Removal Tracker...")
+                denuvo_updates = await asyncio.to_thread(monitor.check_denuvo_status, current_cfg.get("denuvo_watchlist"))
+                for upd in denuvo_updates:
+                    safe_webhook_send(webhook, create_denuvo_embed(upd), username="Denuvo Tracker")
+                    logger.info(f"Posted Denuvo alert: {upd.get('title')}")
+
+            # Check Steam App Patches & Depots
+            if current_cfg.get("watch_steam_app_patches", True):
+                from external_monitors import create_steam_patch_embed
+                logger.info("Checking Steam App Patches & Announcements...")
+                patch_updates = await asyncio.to_thread(monitor.check_steam_app_patches, current_cfg.get("monitored_steam_apps"))
+                for upd in patch_updates:
+                    safe_webhook_send(webhook, create_steam_patch_embed(upd), username="Steam App Patches")
+                    logger.info(f"Posted Steam Patch: {upd.get('title')}")
+
+            # Check Steam Free Weekends
+            if current_cfg.get("watch_steam_free_weekends", True):
+                from external_monitors import create_steam_free_weekend_embed
+                logger.info("Checking Steam Free Weekend promotions...")
+                fw_updates = await asyncio.to_thread(monitor.check_steam_free_weekends)
+                for upd in fw_updates:
+                    safe_webhook_send(webhook, create_steam_free_weekend_embed(upd), username="Steam Free Weekend")
+                    logger.info(f"Posted Steam Free Weekend: {upd.get('title')}")
 
 
             if current_cfg.get("watch_csrin", False):
@@ -955,6 +1048,9 @@ def start_health_server():
                     ("Online-Fix", config.get("watch_onlinefix", True)),
                     ("WeMod / Wand", config.get("watch_wemod", True)),
                     ("Steam Client", config.get("watch_steam_versions", True)),
+                    ("Denuvo Tracker", config.get("watch_denuvo_status", True)),
+                    ("Steam App Patches", config.get("watch_steam_app_patches", True)),
+                    ("Steam Free Weekends", config.get("watch_steam_free_weekends", True)),
                 ] if enabled
             ]
             resp = json.dumps({

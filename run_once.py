@@ -31,7 +31,10 @@ from external_monitors import (
     create_steam_deal_embed,
     create_steam_free_game_embed,
     create_onlinefix_embed,
-    create_wemod_embed
+    create_wemod_embed,
+    create_denuvo_embed,
+    create_steam_patch_embed,
+    create_steam_free_weekend_embed
 )
 
 # UTF-8 encoding support
@@ -65,7 +68,11 @@ def load_config() -> dict:
         "watch_steamrip": False,
         "watch_steamunlockonennabe": True,
         "watch_steam_deals": True,
+        "watch_steam_free_games": True,
         "watch_steam_versions": True,
+        "watch_denuvo_status": True,
+        "watch_steam_app_patches": True,
+        "watch_steam_free_weekends": True,
         "watch_fitgirl": False,
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
@@ -320,6 +327,36 @@ def main():
                 embed = create_wemod_embed(upd)
                 safe_webhook_send(webhook, embed, username="WeMod / Wand")
                 logger.info(f"Posted WeMod Trainer: {upd['game_name']} ({upd['action_type']})")
+
+    # 10. Denuvo Removal & Addition Tracker
+    if config.get("watch_denuvo_status", True):
+        logger.info("Checking Denuvo Status & Removal Tracker...")
+        denuvo_updates = monitor.check_denuvo_status(config.get("denuvo_watchlist"))
+        if denuvo_updates:
+            for upd in denuvo_updates:
+                embed = create_denuvo_embed(upd)
+                safe_webhook_send(webhook, embed, username="Denuvo Tracker")
+                logger.info(f"Posted Denuvo alert: {upd.get('title')}")
+
+    # 11. Steam App Patches & Depot Watcher
+    if config.get("watch_steam_app_patches", True):
+        logger.info("Checking Steam App Patches & Announcements...")
+        patch_updates = monitor.check_steam_app_patches(config.get("monitored_steam_apps"))
+        if patch_updates:
+            for upd in patch_updates:
+                embed = create_steam_patch_embed(upd)
+                safe_webhook_send(webhook, embed, username="Steam App Patches")
+                logger.info(f"Posted Steam Patch: {upd.get('title')}")
+
+    # 12. Steam Free Weekend Watcher
+    if config.get("watch_steam_free_weekends", True):
+        logger.info("Checking Steam Free Weekend promotions...")
+        fw_updates = monitor.check_steam_free_weekends()
+        if fw_updates:
+            for upd in fw_updates:
+                embed = create_steam_free_weekend_embed(upd)
+                safe_webhook_send(webhook, embed, username="Steam Free Weekend")
+                logger.info(f"Posted Steam Free Weekend: {upd.get('title')}")
 
     logger.info("Single-run execution finished successfully!")
 

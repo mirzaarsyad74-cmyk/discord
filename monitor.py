@@ -623,6 +623,27 @@ class ForumMonitor:
         self.save_state()
         return updates
 
+    def check_denuvo_status(self, watchlist: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
+        """Tracks Denuvo Anti-Tamper removals and additions via Steam Store API and r/CrackWatch."""
+        from external_monitors import check_denuvo_status
+        updates = check_denuvo_status(self.state, watchlist=watchlist)
+        self.save_state()
+        return updates
+
+    def check_steam_app_patches(self, monitored_apps: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
+        """Checks for official patch notes, version updates, and depot changes for monitored Steam apps."""
+        from external_monitors import check_steam_app_patches
+        updates = check_steam_app_patches(self.state, monitored_apps=monitored_apps)
+        self.save_state()
+        return updates
+
+    def check_steam_free_weekends(self) -> List[Dict[str, Any]]:
+        """Checks for active Steam Free Weekend promotions."""
+        from external_monitors import check_steam_free_weekends
+        updates = check_steam_free_weekends(self.state)
+        self.save_state()
+        return updates
+
 
 
     def remove_topic(self, topic_id: str):
