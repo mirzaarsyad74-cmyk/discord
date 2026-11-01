@@ -386,6 +386,20 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
 
         new_items = []
         newly_seen = []
+
+        GROUPS_PATTERN = (
+            r'\b(?:rune|tenoke|flt|fairlight|skidrow|codex|razor1911|empress|caviator|plaza|cpy|'
+            r'reloaded|voices38|v0ices38|artifact|kaos|xatab|chotya|tinyrepack|tinyiso|deviance|'
+            r'steampunks|fitgirl|dodi|elamigos|goldberg)\b'
+        )
+        KEYWORDS_PATTERN = r'\b(?:repack|crack(?:ed|fix)?|bypass|hypervisor|denuvo|unprotected|proper)\b'
+        SCENE_TAG_PATTERN = r'\b[A-Za-z0-9._]+-(?:[A-Za-z0-9_]{2,})\b'
+        EXCLUDE_PATTERNS = [
+            r'(?i)\bquestion\s+thread\b',
+            r'(?i)\blooking\s+for\s+testers\b',
+            r'(?i)\b(?:discussion|rumor|humor|meme|suggestion)\b'
+        ]
+
         for e in entries:
             id_m = re.search(r'<id>(.*?)</id>', e)
             entry_id = id_m.group(1).strip() if id_m else ""
@@ -404,14 +418,38 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
             author_m = re.search(r'<author>\s*<name>(.*?)</name>', e)
             author = author_m.group(1).strip() if author_m else "CrackWatch"
 
-            # Filter out non-release posts (questions, humor, drama)
-            # Prioritize posts with scene tags, [Release], [Repack], [Crack], Daily Releases
+            # Parse content HTML for metadata (NFO link, Steam link, size)
+            content_m = re.search(r'<content[^>]*>(.*?)</content>', e, re.DOTALL)
+            content_raw = html.unescape(content_m.group(1)) if content_m else ""
+
+            nfo_m = re.search(r'href=[\'"](https?://[^\'"]+\.(?:png|jpg|jpeg|webp)|https?://(?:i\.)?ibb\.co/[^\'"]+)[\'"][^>]*>NFO', content_raw, re.I)
+            nfo_url = nfo_m.group(1) if nfo_m else None
+
+            steam_m = re.search(r'href=[\'"](https?://store\.steampowered\.com/app/\d+[^/\'"]*)', content_raw)
+            steam_url = steam_m.group(1) if steam_m else None
+
+            size_m = re.search(r'Release Size:\s*([0-9.]+\s*[MGT]B)', content_raw, re.I)
+            release_size = size_m.group(1) if size_m else None
+
+            # Filter out non-release posts (questions, humor, drama, automoderator)
             t_lower = title.lower()
+            clean_author = re.sub(r'^/?u/', '', author.strip().lower())
+
+            if clean_author == "automoderator" or any(re.search(pat, t_lower) for pat in EXCLUDE_PATTERNS):
+                seen_ids.add(entry_id)
+                newly_seen.append(entry_id)
+                continue
+
+            is_voices38 = clean_author in ("voices38", "v0ices38") or any(v in t_lower for v in ["voices38", "v0ices38"])
+
             is_valid_release = any([
-                re.search(r'\b(?:rune|tenoke|flt|skidrow|codex|razor1911|fitgirl|dodi|elamigos|goldberg)\b', t_lower),
-                re.search(r'\b(?:repack|crack(?:ed|fix)?|bypass|hypervisor|denuvo)\b', t_lower),
+                is_voices38,
+                bool(nfo_url),
+                re.search(GROUPS_PATTERN, t_lower),
+                re.search(KEYWORDS_PATTERN, t_lower),
+                re.search(SCENE_TAG_PATTERN, title),
                 "daily releases" in t_lower,
-                title.startswith("[Release]") or title.startswith("[Repack]") or title.startswith("[Crack]")
+                title.startswith(("[Release]", "[Repack]", "[Crack]", "[Bypass]", "[NFO]", "[Update]"))
             ])
 
             if not is_valid_release:
@@ -437,7 +475,10 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
                 "title": title,
                 "link": link,
                 "author": author,
-                "time_kl": kl_time
+                "time_kl": kl_time,
+                "nfo_url": nfo_url,
+                "steam_url": steam_url,
+                "size": release_size
             })
             seen_ids.add(entry_id)
             newly_seen.append(entry_id)
@@ -504,7 +545,8 @@ def create_crackwatch_embed(item: Dict[str, Any]):
     """Builds a Discord Embed for a new r/CrackWatch alert with signature Reddit Orange color."""
     import discord
     title = item["title"]
-    is_voices38 = "voices38" in title.lower()
+    author = str(item.get("author", "Redditor"))
+    is_voices38 = any(x in title.lower() or x in author.lower() for x in ["voices38", "v0ices38"])
     embed_color = 0xFFD700 if is_voices38 else COLOR_CRACKWATCH
     prefix = "⚡ [r/CrackWatch • Voices38 Alert]" if is_voices38 else "👀 [r/CrackWatch]"
 
@@ -517,8 +559,18 @@ def create_crackwatch_embed(item: Dict[str, Any]):
     if is_voices38:
         embed.add_field(name="⚡ Special Release Alert", value="**Voices38 Denuvo Bypass / Crack Detected!**", inline=False)
     embed.add_field(name="📢 Release Title", value=f"**{title}**", inline=False)
-    embed.add_field(name="👤 Posted By", value=f"`{item.get('author', 'Redditor')}`", inline=True)
-    embed.add_field(name="🕒 Posted Time (GMT+8)", value=item["time_kl"], inline=True)
+    embed.add_field(name="👤 Posted By", value=f"`{author}`", inline=True)
+    embed.add_field(name="🕒 Posted Time (GMT+8)", value=item.get("time_kl", ""), inline=True)
+
+    if item.get("size"):
+        embed.add_field(name="📦 Release Size", value=f"`{item['size']}`", inline=True)
+    if item.get("steam_url"):
+        embed.add_field(name="🎮 Steam Store", value=f"👉 **[Store Page]({item['steam_url']})**", inline=True)
+    if item.get("nfo_url"):
+        embed.add_field(name="📜 NFO Proof", value=f"👉 **[View NFO Image]({item['nfo_url']})**", inline=True)
+        if any(item["nfo_url"].lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]) or "ibb.co" in item["nfo_url"]:
+            embed.set_image(url=item["nfo_url"])
+
     embed.add_field(
         name="🌐 Reddit Thread",
         value=f"👉 **[View Thread on r/CrackWatch]({item['link']})**",

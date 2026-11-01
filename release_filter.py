@@ -11,7 +11,8 @@ REPACKERS = [
 SCENE_GROUPS = [
     r'\brune\b', r'\btenoke\b', r'\bflt\b', r'\bfairlight\b',
     r'\bcodex\b', r'\bskidrow\b', r'\bplaza\b', r'\brazor1911\b',
-    r'\bcaviator\b', r'\bempress\b', r'\bhypervisor\b', r'\bvoices38\b'
+    r'\bcaviator\b', r'\bempress\b', r'\bhypervisor\b', r'\bvoices38\b',
+    r'\bv0ices38\b', r'\bartifact\b'
 ]
 
 CORE_RELEASE_TERMS = [
@@ -60,7 +61,7 @@ RELEASE_STRUCTURES = [
     r'\[\s*\d+(?:\.\d+)?\s*(?:MB|GB)\s*\]',                  # e.g. [5855 MB] or [10.80 GB]
     r'(?i)\b(?:archive|download|file)\s*size\s*:\s*\d+',    # e.g. Archive size: 10.80 GB
     r'(?i)\bbuild\s*(\d{5,})\b',                            # e.g. Build 22016198
-    r'\b[A-Za-z0-9._]+-(?:ElAmigos|RUNE|TENOKE|FLT|CODEX|SKIDROW|HYPERViSOR|Razor1911|EMPRESS|Voices38)\b',  # Scene tag
+    r'\b[A-Za-z0-9._]+-(?:ElAmigos|RUNE|TENOKE|FLT|CODEX|SKIDROW|HYPERViSOR|Razor1911|EMPRESS|Voices38|v0ices38|ARTIFACT)\b',  # Scene tag
     r'(?i)\b(?:selective download|lossless|repack features|nfo)\b'
 ]
 
@@ -97,7 +98,7 @@ def classify_release(
     proof = has_release_proof(own_text)
 
     # 0. Voices38 Priority Detection (Denuvo Bypasses & Hypervisor releases)
-    if author_lower == "voices38":
+    if author_lower in ("voices38", "v0ices38"):
         if any(term in text_lower for term in ["bypass", "hypervisor", "hv"]):
             return True, "Voices38 Denuvo Bypass"
         elif any(term in text_lower for term in ["crack", "denuvo", "fix", "patch"]):
@@ -106,7 +107,7 @@ def classify_release(
             return True, "Voices38 Release"
 
     # Mentions of Voices38 by regular users: require proof of release so comments like "waiting for voices38" are rejected
-    if re.search(r'\bvoices38\b', own_text, re.IGNORECASE):
+    if re.search(r'\b(?:voices38|v0ices38)\b', own_text, re.IGNORECASE):
         if any(term in text_lower for term in ["bypass", "hypervisor", "hv", "crack", "denuvo"]):
             if proof:
                 return True, "Voices38 Denuvo Bypass"
@@ -173,7 +174,7 @@ def classify_release(
         return True, f"{scene_found} Crack Release"
 
     # 9. Generic Scene release structure (e.g. Game.Name-GROUP)
-    scene_tag_match = re.search(r'\b[A-Za-z0-9._]+-(?:ElAmigos|RUNE|TENOKE|FLT|CODEX|SKIDROW|Razor1911|HYPERViSOR|EMPRESS)\b', own_text)
+    scene_tag_match = re.search(r'\b[A-Za-z0-9._]+-(?:ElAmigos|RUNE|TENOKE|FLT|CODEX|SKIDROW|Razor1911|HYPERViSOR|EMPRESS|Voices38|v0ices38|ARTIFACT)\b', own_text, re.IGNORECASE)
     if scene_tag_match:
         group_name = scene_tag_match.group(0).split('-')[-1]
         if "hypervisor" in group_name.lower():
