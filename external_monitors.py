@@ -30,6 +30,8 @@ ONLINEFIX_RSS_URL = "https://online-fix.me/rss.xml"
 ONLINEFIX_TG_URL = "https://t.me/s/onlinefix"
 WEMOD_LATEST_URL = "https://www.wemod.com/cheats?sort=latest"
 WEMOD_FEED_URL = WEMOD_LATEST_URL
+FLING_BASE_URL = "https://flingtrainer.com/"
+FLING_FEED_URL = "https://flingtrainer.com/feed/"
 
 # Brand Colors (Distinct spectrum - zero similar colors)
 COLOR_STEAMRIP = 0x8B5CF6    # Vivid Royal Violet / Purple
@@ -40,6 +42,7 @@ COLOR_CRACKWATCH = 0xFF5722  # Reddit Vibrant Flame Orange
 COLOR_STEAM_DEAL = 0xE11D48  # Steam Sale Crimson / Discount Red
 COLOR_ONLINEFIX = 0x00E5FF   # Neon Electric Aqua / Cyan
 COLOR_WEMOD = 0x6366F1       # Electric Iris / Wand Indigo
+COLOR_FLING = 0x0284C7       # FLiNG Steel Cobalt Blue
 COLOR_STEAM_FREE = 0x9333EA  # Aesthetic Purple / Steam Free Violet
 COLOR_DENUVO_REMOVED = 0x10B981  # Emerald Green (Clean / Denuvo Removed)
 COLOR_DENUVO_ADDED = 0xEF4444    # Danger Crimson (Denuvo Added)
@@ -58,6 +61,7 @@ STEAM_PATCH_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord
 STEAM_FREE_WEEKEND_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_weekend_icon.png"
 ONLINEFIX_ICON = "https://online-fix.me/apple-touch-icon.png"
 WEMOD_ICON = "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png"
+FLING_ICON = "https://flingtrainer.com/wp-content/uploads/2019/05/cropped-free-icon-bw_icon-template-psd-3-3-200x200.png"
 
 SUO_GENRE_MAP = {
     0: "Unknown Genre",
@@ -1053,22 +1057,8 @@ def create_wemod_embed(item: Dict[str, Any]):
         embed.add_field(name="👤 Trainer Creator", value=f"`{item['creator']}`", inline=True)
 
     cheats_cnt = item.get("cheats_count", 0)
-    changes = item.get("changes") or item.get("cheats", [])
-    if changes:
-        display_bullets = []
-        for c in changes[:6]:
-            clean_c = " ".join(str(c).split())
-            display_bullets.append(f"• {clean_c}")
-        if len(changes) > 6:
-            display_bullets.append(f"• *... and {len(changes) - 6} more cheat options*")
-        bullets_text = "\n".join(display_bullets)
-        field_name = f"📋 Cheats Included ({len(changes)} Cheats)" if len(changes) > 1 else "📋 Cheats & Changes Included"
-        embed.add_field(name=field_name, value=bullets_text, inline=False)
-    elif cheats_cnt > 0:
-        embed.add_field(name="📋 Cheats & Changes Included", value=f"• Released trainer with **{cheats_cnt} cheats** for {plat_str}", inline=False)
-    else:
-        fallback_desc = f"Cheats and trainer ready for {plat_str} on WeMod / Wand."
-        embed.add_field(name="📋 Trainer Details", value=fallback_desc, inline=False)
+    opts_str = f"**{cheats_cnt} Cheats**" if cheats_cnt > 0 else "Available"
+    embed.add_field(name="🔢 Total Cheats", value=opts_str, inline=True)
 
     links = [f"👉 **[Launch / Get Cheats on WeMod]({wemod_url})**"]
     if community_url:
@@ -1082,6 +1072,266 @@ def create_wemod_embed(item: Dict[str, Any]):
     )
 
     embed.set_footer(text="WeMod / Wand Monitor • Game Trainers & Cheats • GMT+8", icon_url=WEMOD_ICON)
+    return embed
+
+
+
+def check_fling_feed(state: dict) -> List[Dict[str, Any]]:
+    """
+    Checks for newly released game trainers and trainer cheat updates from FLiNG Trainer.
+    Monitors live RSS feed: https://flingtrainer.com/feed/
+    Extracts game title, trainer title, options count, game version, updated date,
+    cheat options list, and high-resolution trainer screenshot image.
+    Uses strict FIFO ordered tracking to prevent duplicate postings.
+    """
+    fling_state = state.setdefault("flingtrainer", {})
+    known_trainers = fling_state.setdefault("known_trainers", {})
+    seen_keys = set(str(x) for x in fling_state.get("seen_keys", []))
+
+    try:
+        content = fetch_web_content(FLING_FEED_URL, timeout=12)
+        if not content:
+            return []
+
+        # Parse RSS XML
+        import xml.etree.ElementTree as ET
+        items = []
+        try:
+            root = ET.fromstring(content.encode("utf-8") if isinstance(content, str) else content)
+            channel = root.find("channel")
+            if channel is not None:
+                items = channel.findall("item")
+        except Exception as e:
+            logger.debug(f"XML parse failed ({e}), falling back to BeautifulSoup for FLiNG feed")
+            soup = BeautifulSoup(content, "html.parser")
+            items = soup.find_all("item")
+
+        if not items:
+            return []
+
+        # First-run initialization: populate initial games without sending historical notifications
+        if not known_trainers and not seen_keys:
+            logger.info(f"Initializing FLiNG Trainer tracker with {len(items[:30])} current games...")
+            init_keys = []
+            for it in items[:30]:
+                link = ""
+                link_tag = it.find("link")
+                if link_tag is not None:
+                    link = link_tag.text if hasattr(link_tag, "text") and link_tag.text else link_tag.get_text(strip=True)
+                clean_link = link.split("?")[0].strip() if link else ""
+                if not clean_link:
+                    continue
+
+                content_encoded = ""
+                if hasattr(it, "findall"):
+                    for child in it:
+                        if "encoded" in getattr(child, "tag", ""):
+                            content_encoded = child.text or ""
+                desc_text = ""
+                desc_tag = it.find("description")
+                if desc_tag is not None:
+                    desc_text = desc_tag.text if hasattr(desc_tag, "text") and desc_tag.text else desc_tag.get_text(strip=True)
+
+                meta_text = content_encoded or desc_text
+                options_m = re.search(r'(\d+)\s+Options', meta_text, re.I)
+                options_cnt = int(options_m.group(1)) if options_m else 0
+
+                version_m = re.search(r'Game Version:\s*([^·\n<]+)', meta_text, re.I)
+                game_ver = version_m.group(1).strip() if version_m else ""
+
+                updated_m = re.search(r'Last Updated:\s*([^·\n<]+)', meta_text, re.I)
+                last_upd = updated_m.group(1).strip() if updated_m else ""
+
+                event_key = f"{clean_link}:{options_cnt}:{game_ver}:{last_upd}"
+                known_trainers[clean_link] = {
+                    "options_count": options_cnt,
+                    "game_version": game_ver,
+                    "last_updated": last_upd,
+                    "init_seen": True
+                }
+                init_keys.append(event_key)
+            fling_state["seen_keys"] = update_seen_list([], init_keys, max_len=600)
+            return []
+
+        new_items = []
+        newly_seen_keys = []
+
+        for it in items[:25]:
+            link = ""
+            link_tag = it.find("link")
+            if link_tag is not None:
+                link = link_tag.text if hasattr(link_tag, "text") and link_tag.text else link_tag.get_text(strip=True)
+            clean_link = link.split("?")[0].strip() if link else ""
+            if not clean_link:
+                continue
+
+            title_tag = it.find("title")
+            title = (title_tag.text if hasattr(title_tag, "text") and title_tag.text else title_tag.get_text(strip=True)) if title_tag is not None else ""
+
+            # Categories & game name
+            cats = []
+            if hasattr(it, "findall"):
+                for c in it.findall("category"):
+                    c_txt = c.text if hasattr(c, "text") and c.text else c.get_text(strip=True)
+                    if c_txt:
+                        cats.append(c_txt.strip())
+            else:
+                for c in it.find_all("category"):
+                    c_txt = c.get_text(strip=True)
+                    if c_txt:
+                        cats.append(c_txt)
+
+            game_cats = [c for c in cats if c.lower() != "trainer"]
+            game_name = game_cats[0] if game_cats else re.sub(r'\s+Trainer.*$', '', title, flags=re.I).strip()
+            if not game_name:
+                game_name = title or "Unknown Game"
+
+            # PubDate
+            pubdate_tag = it.find("pubdate") or it.find("pubDate")
+            pub_date = (pubdate_tag.text if hasattr(pubdate_tag, "text") and pubdate_tag.text else pubdate_tag.get_text(strip=True)) if pubdate_tag is not None else ""
+
+            content_encoded = ""
+            if hasattr(it, "findall"):
+                for child in it:
+                    if "encoded" in getattr(child, "tag", ""):
+                        content_encoded = child.text or ""
+            desc_text = ""
+            desc_tag = it.find("description")
+            if desc_tag is not None:
+                desc_text = desc_tag.text if hasattr(desc_tag, "text") and desc_tag.text else desc_tag.get_text(strip=True)
+
+            meta_text = content_encoded or desc_text
+            options_m = re.search(r'(\d+)\s+Options', meta_text, re.I)
+            options_cnt = int(options_m.group(1)) if options_m else 0
+
+            version_m = re.search(r'Game Version:\s*([^·\n<]+)', meta_text, re.I)
+            game_ver = version_m.group(1).strip() if version_m else "v1.0+"
+
+            updated_m = re.search(r'Last Updated:\s*([^·\n<]+)', meta_text, re.I)
+            last_upd = updated_m.group(1).strip() if updated_m else ""
+
+            # Trainer cheat table / screenshot image
+            img_m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', content_encoded)
+            img_url = img_m.group(1) if img_m else None
+
+            event_key = f"{clean_link}:{options_cnt}:{game_ver}:{last_upd}"
+
+            is_new_game = clean_link not in known_trainers
+            known_info = known_trainers.get(clean_link, {})
+            old_options_cnt = known_info.get("options_count", 0)
+            old_last_upd = known_info.get("last_updated", "")
+            old_ver = known_info.get("game_version", "")
+
+            action_type = None
+            if is_new_game and event_key not in seen_keys:
+                action_type = "✨ New Trainer Release"
+            elif event_key not in seen_keys and (options_cnt != old_options_cnt or last_upd != old_last_upd or game_ver != old_ver):
+                action_type = "🔄 Trainer Updated"
+
+            if not action_type:
+                continue
+
+            known_trainers[clean_link] = {
+                "game_name": game_name,
+                "options_count": options_cnt,
+                "game_version": game_ver,
+                "last_updated": last_upd,
+                "last_notified": datetime.now(timezone.utc).isoformat()
+            }
+            seen_keys.add(event_key)
+            newly_seen_keys.append(event_key)
+
+            kl_time = parse_pubdate_to_kl(pub_date)
+            if last_upd:
+                kl_time = f"{kl_time}\n*(Updated: {last_upd})*"
+
+            new_items.append({
+                "source": "FLiNG Trainer",
+                "game_name": game_name,
+                "title": title or f"{game_name} Trainer",
+                "link": clean_link,
+                "action_type": action_type,
+                "options_count": options_cnt,
+                "game_version": game_ver,
+                "last_updated": last_upd,
+                "thumbnail": FLING_ICON,
+                "image": img_url,
+                "time_kl": kl_time
+            })
+
+        if newly_seen_keys:
+            fling_state["seen_keys"] = update_seen_list(fling_state.get("seen_keys", []), newly_seen_keys, max_len=600)
+
+        # Prune known_trainers if it exceeds 800 entries
+        if len(known_trainers) > 800:
+            keys_to_remove = list(known_trainers.keys())[:-500]
+            for k in keys_to_remove:
+                del known_trainers[k]
+
+        return list(reversed(new_items))
+    except Exception as e:
+        logger.error(f"Error checking FLiNG Trainer feed: {e}")
+        return []
+
+
+def create_fling_embed(item: Dict[str, Any]):
+    """Builds a Discord Embed for a new FLiNG Trainer release or update with signature FLiNG Steel Cobalt Blue and official icon."""
+    import discord
+    game_name = item.get("game_name") or "Unknown Game"
+    action_type = item.get("action_type", "✨ New Trainer Release")
+    is_release = "Release" in action_type
+    fling_url = item.get("link") or FLING_BASE_URL
+
+    title_prefix = "✨ [FLiNG Trainer Release]" if is_release else "🔄 [FLiNG Trainer Updated]"
+    embed_title = f"{title_prefix} {game_name}"
+    if len(embed_title) > 250:
+        embed_title = embed_title[:247] + "..."
+
+    embed = discord.Embed(
+        title=embed_title,
+        url=fling_url,
+        color=COLOR_FLING
+    )
+
+    # Official FLiNG icon for author and thumbnail
+    embed.set_author(name="FLiNG Trainer Monitor", url=FLING_BASE_URL, icon_url=FLING_ICON)
+    embed.set_thumbnail(url=FLING_ICON)
+
+    # Trainer cheats screenshot / image
+    if item.get("image"):
+        embed.set_image(url=item["image"])
+
+    embed.add_field(name="🎮 Game Title", value=f"**[{game_name}]({fling_url})**", inline=False)
+    embed.add_field(name="🏷️ Event Type", value=f"**{action_type}**", inline=True)
+
+    opts_cnt = item.get("options_count", 0)
+    opts_str = f"**{opts_cnt} Options**" if opts_cnt > 0 else "Available"
+    embed.add_field(name="🔢 Total Cheats", value=opts_str, inline=True)
+
+    ver = item.get("game_version") or "v1.0+"
+    embed.add_field(name="📦 Game Version", value=f"`{ver}`", inline=True)
+
+    time_val = item.get("time_kl")
+    if not time_val:
+        now_kl = datetime.now(timezone.utc).astimezone(KL_TZ)
+        kl_str = now_kl.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+        last_upd = item.get("last_updated")
+        rel_note = f"\n*(Updated: {last_upd})*" if last_upd else ""
+        time_val = f"`{kl_str}`{rel_note}"
+    embed.add_field(name="🕒 Time (GMT+8)", value=time_val, inline=True)
+    embed.add_field(name="👤 Trainer Creator", value="`FLiNG`", inline=True)
+
+    links = [
+        f"👉 **[Download Trainer on FLiNG Trainer]({fling_url})**",
+        f"🌐 **[FLiNG Homepage]({FLING_BASE_URL})**"
+    ]
+    embed.add_field(
+        name="🔗 Links",
+        value=" • ".join(links),
+        inline=False
+    )
+
+    embed.set_footer(text="FLiNG Trainer Monitor • PC Game Cheats & Trainers • GMT+8", icon_url=FLING_ICON)
     return embed
 
 

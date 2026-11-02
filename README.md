@@ -127,6 +127,8 @@ You can customize enabled monitors and polling behavior in `config.json`:
 }
 ```
 
+- **`watch_flingtrainer`**: Enable/disable FLiNG Trainer (`https://flingtrainer.com/`) monitoring with official icon profile picture, game versions, and total cheat count (`true` by default).
+- **`watch_wemod`**: Enable/disable WeMod / Wand trainer releases & cheat updates.
 - **`watch_steam_deals`**: Enable/disable Steam game promotions & sales monitoring with Malaysian Ringgit (`MYR` / `RM`) normal & discount pricing (`true` by default).
 - **`watch_steamunlockonennabe`**: Enable/disable SUO Wannabe (`steamunlockonennabe.click`) monitoring with high-res Steam cover posters (`true` by default).
 - **`watch_crackwatch_reddit`**: Enable/disable Reddit r/CrackWatch monitor.

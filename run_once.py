@@ -32,6 +32,8 @@ from external_monitors import (
     create_steam_free_game_embed,
     create_onlinefix_embed,
     create_wemod_embed,
+    create_fling_embed,
+    FLING_ICON,
     create_denuvo_embed,
     create_steam_patch_embed,
     create_steam_free_weekend_embed
@@ -78,6 +80,7 @@ def load_config() -> dict:
         "watch_crackwatch_reddit": True,
         "watch_onlinefix": True,
         "watch_wemod": True,
+        "watch_flingtrainer": True,
         "watch_csrin": False,
         "enable_global_feed": False,
         "subforum_feeds": [],
@@ -328,7 +331,17 @@ def main():
                 safe_webhook_send(webhook, embed, username="WeMod / Wand")
                 logger.info(f"Posted WeMod Trainer: {upd['game_name']} ({upd['action_type']})")
 
-    # 10. Denuvo Removal & Addition Tracker
+    # 10. FLiNG Trainer Watcher (Signature Steel Cobalt Blue Color)
+    if config.get("watch_flingtrainer", True) or config.get("watch_fling", True):
+        logger.info("Checking FLiNG Trainer releases & updates...")
+        fling_updates = monitor.check_fling_updates()
+        if fling_updates:
+            for upd in fling_updates:
+                embed = create_fling_embed(upd)
+                safe_webhook_send(webhook, embed, username="FLiNG Trainer", avatar_url=FLING_ICON)
+                logger.info(f"Posted FLiNG Trainer: {upd['game_name']} ({upd['action_type']})")
+
+    # 11. Denuvo Removal & Addition Tracker
     if config.get("watch_denuvo_status", True):
         logger.info("Checking Denuvo Status & Removal Tracker...")
         denuvo_updates = monitor.check_denuvo_status(config.get("denuvo_watchlist"))
@@ -338,7 +351,7 @@ def main():
                 safe_webhook_send(webhook, embed, username="Denuvo Tracker")
                 logger.info(f"Posted Denuvo alert: {upd.get('title')}")
 
-    # 11. Steam App Patches & Depot Watcher
+    # 12. Steam App Patches & Depot Watcher
     if config.get("watch_steam_app_patches", True):
         logger.info("Checking Steam App Patches & Announcements...")
         patch_updates = monitor.check_steam_app_patches(config.get("monitored_steam_apps"))
@@ -348,7 +361,7 @@ def main():
                 safe_webhook_send(webhook, embed, username="Steam App Patches")
                 logger.info(f"Posted Steam Patch: {upd.get('title')}")
 
-    # 12. Steam Free Weekend Watcher
+    # 13. Steam Free Weekend Watcher
     if config.get("watch_steam_free_weekends", True):
         logger.info("Checking Steam Free Weekend promotions...")
         fw_updates = monitor.check_steam_free_weekends()

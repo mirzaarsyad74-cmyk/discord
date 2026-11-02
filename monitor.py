@@ -616,6 +616,13 @@ class ForumMonitor:
         self.save_state()
         return updates
 
+    def check_fling_updates(self) -> List[Dict[str, Any]]:
+        """Checks for newly released game trainers and cheat updates from FLiNG Trainer (https://flingtrainer.com/)."""
+        from external_monitors import check_fling_feed
+        updates = check_fling_feed(self.state)
+        self.save_state()
+        return updates
+
     def check_steam_free_games(self) -> List[Dict[str, Any]]:
         """Checks for 100% free Steam games and limited-time giveaways."""
         from external_monitors import check_steam_free_games

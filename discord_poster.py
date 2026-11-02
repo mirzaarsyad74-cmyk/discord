@@ -362,6 +362,8 @@ def create_post_embed(post: ForumPost, release_label: Optional[str] = None) -> d
 
 
 DEFAULT_MONITOR_AVATARS: Dict[str, str] = {
+    "FLiNG Trainer": "https://flingtrainer.com/wp-content/uploads/2019/05/cropped-free-icon-bw_icon-template-psd-3-3-200x200.png",
+    "FLiNG Trainer Monitor": "https://flingtrainer.com/wp-content/uploads/2019/05/cropped-free-icon-bw_icon-template-psd-3-3-200x200.png",
     "WeMod / Wand": "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png",
     "SteamRIP Monitor": "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png",
     "SUO Wannabe Monitor": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/suo_icon.png",
