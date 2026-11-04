@@ -347,10 +347,11 @@ def check_daily_release_radar(state: dict, force: bool = False) -> Optional[Dict
 def create_daily_release_radar_embed(data: Dict[str, Any]):
     """
     Builds a Discord Embed for the Daily Release Radar post.
+    Guarantees every field value is safely <= 850 characters (well under Discord's 1024 limit).
     """
     import discord
-    date_display = data["date_display"]
-    items = data["items"]
+    date_display = data.get("date_display", "")
+    items = data.get("items", [])
 
     embed = discord.Embed(
         title=f"🎯 Daily Steam Release Radar — {date_display}",
@@ -358,20 +359,54 @@ def create_daily_release_radar_embed(data: Dict[str, Any]):
         color=0x00B4D8  # Cyber Cyan
     )
 
-    lines = []
+    formatted_items = []
     for it in items:
         icon = "🧩" if it.get("type") == "DLC / EXPANSION" else "🎮"
-        tag = "[Today]" if it.get("is_today", True) else "[Tomorrow]"
-        title = it.get("title", "Release")
+        tag = "Today" if it.get("is_today", True) else "Tomorrow"
+        raw_title = it.get("title", "Release")
+        title = raw_title if len(raw_title) <= 45 else raw_title[:44] + "…"
         url = it.get("store_url", "https://store.steampowered.com/")
         price = it.get("price", "Free / Unpriced")
-        lines.append(f"{icon} **[{title}]({url})** — `{tag} {price}`\n   *🌐 [Web View]({url}) • 📊 [SteamDB](https://steamdb.info/app/{it['appid']}/)*")
+        appid = it.get("appid", "")
+        steamdb_url = f"https://steamdb.info/app/{appid}/" if appid else ""
 
-    embed.add_field(
-        name="🚀 Featured Releases",
-        value="\n".join(lines) if lines else "No major releases scheduled for today.",
-        inline=False
-    )
+        line = (
+            f"{icon} **[{title}]({url})** — `{tag} • {price}`\n"
+            f"   🌐 [Web Store]({url}) • 📊 [SteamDB]({steamdb_url})"
+        )
+        formatted_items.append(line)
+
+    if not formatted_items:
+        embed.add_field(
+            name="🚀 Featured Releases",
+            value="No major releases scheduled for today.",
+            inline=False
+        )
+    else:
+        # Split items into chunks of at most 3 items and max 800 characters
+        chunks = []
+        curr_chunk = []
+        curr_len = 0
+        for item_str in formatted_items:
+            if (len(curr_chunk) >= 3 or (curr_len + len(item_str) + 1 > 800)) and curr_chunk:
+                chunks.append("\n".join(curr_chunk))
+                curr_chunk = [item_str]
+                curr_len = len(item_str)
+            else:
+                curr_chunk.append(item_str)
+                curr_len += len(item_str) + 1
+        if curr_chunk:
+            chunks.append("\n".join(curr_chunk))
+
+        if len(chunks) == 1:
+            embed.add_field(name="🚀 Featured Releases", value=chunks[0], inline=False)
+        else:
+            for idx, chunk in enumerate(chunks):
+                embed.add_field(
+                    name=f"🚀 Featured Releases ({idx + 1}/{len(chunks)})",
+                    value=chunk,
+                    inline=False
+                )
 
     embed.set_footer(
         text="Daily Steam Release Radar • Automated at 12:00 AM GMT+8 • Prices in MYR (RM)",

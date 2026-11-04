@@ -1,3 +1,5 @@
+import os
+import io
 import re
 import time
 import logging
@@ -395,36 +397,88 @@ def safe_webhook_send(
     username: str = "CS.RIN.RU Monitor",
     avatar_url: Optional[str] = None,
     file: Optional[Any] = None,
+    file_path: Optional[str] = None,
+    file_name: Optional[str] = None,
     max_retries: int = 3,
     delay: float = 1.2
 ) -> bool:
     """
-    Sends a Discord webhook with rate-limit shielding and HTTP 429 exponential backoff.
+    Sends a Discord webhook with rate-limit shielding, embed size safety checks,
+    and HTTP 429 exponential backoff.
     Guarantees reliable delivery even when multiple releases burst in a single check.
     Automatically assigns high-res monitor avatars for each monitor username.
-    Supports file attachment uploads (e.g. Infographic posters).
+    Supports file attachment uploads (e.g. Infographic posters) with fresh retry handles
+    to prevent 'ValueError: read of closed file'.
     """
     resolved_avatar = avatar_url or DEFAULT_MONITOR_AVATARS.get(username)
 
+    # Universal Discord embed limit enforcement
+    if embed is not None:
+        if embed.title and len(embed.title) > 256:
+            embed.title = embed.title[:253] + "..."
+        if embed.description and len(embed.description) > 4096:
+            embed.description = embed.description[:4090] + "..."
+        if embed.fields:
+            for i, f in enumerate(embed.fields):
+                f_name = f.name[:256] if f.name and len(f.name) > 256 else f.name
+                if f.value and len(f.value) > 1024:
+                    logger.warning(f"Embed field '{f.name}' value exceeded 1024 chars ({len(f.value)} chars). Truncating safely.")
+                    embed.set_field_at(i, name=f_name, value=f.value[:1020] + "...", inline=f.inline)
+                elif f_name != f.name:
+                    embed.set_field_at(i, name=f_name, value=f.value, inline=f.inline)
+
+    # Resolve disk path for file attachment to enable clean retry reopening
+    stored_path = file_path
+    stored_name = file_name
+    if not stored_path and file is not None and hasattr(file, "fp"):
+        if hasattr(file.fp, "name") and isinstance(file.fp.name, str) and os.path.exists(file.fp.name):
+            stored_path = file.fp.name
+            stored_name = getattr(file, "filename", None) or os.path.basename(file.fp.name)
+
     for attempt in range(1, max_retries + 1):
+        send_file = None
         try:
             send_kwargs: Dict[str, Any] = {"embed": embed, "username": username}
             if resolved_avatar:
                 send_kwargs["avatar_url"] = resolved_avatar
-            if file is not None:
-                send_kwargs["file"] = file
+
+            if stored_path and os.path.exists(stored_path):
+                # Fresh discord.File handle created on every attempt
+                send_file = discord.File(stored_path, filename=stored_name or os.path.basename(stored_path))
+                send_kwargs["file"] = send_file
+            elif file is not None:
+                if hasattr(file, "fp") and file.fp is not None:
+                    if getattr(file.fp, "closed", False):
+                        logger.warning("discord.File fp is already closed and disk path unavailable.")
+                    elif hasattr(file.fp, "seekable") and file.fp.seekable():
+                        file.fp.seek(0)
+                        send_kwargs["file"] = file
+                    else:
+                        send_kwargs["file"] = file
+                else:
+                    send_kwargs["file"] = file
+
             webhook.send(**send_kwargs)
             time.sleep(delay)
             return True
         except Exception as e:
             err_str = str(e).lower()
-            if "429" in err_str or "rate limit" in err_str:
+            if "50035" in err_str or ("400" in err_str and "bad request" in err_str):
+                logger.error(f"Discord 400 Bad Request (non-recoverable error): {e}. Aborting retries.")
+                return False
+            elif "429" in err_str or "rate limit" in err_str:
                 wait_time = 3.0 * attempt
                 logger.warning(f"Discord 429 rate limit hit. Waiting {wait_time}s before retry ({attempt}/{max_retries})...")
                 time.sleep(wait_time)
             else:
-                logger.error(f"Error sending webhook: {e}")
+                logger.error(f"Error sending webhook (attempt {attempt}/{max_retries}): {e}")
                 time.sleep(1.0)
+        finally:
+            if send_file is not None:
+                try:
+                    send_file.close()
+                except Exception:
+                    pass
     return False
 
 

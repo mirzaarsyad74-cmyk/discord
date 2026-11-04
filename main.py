@@ -948,15 +948,19 @@ async def run_webhook_daemon(webhook_url: str):
                     if daily_data:
                         logger.info(f"Posting Daily Steam Release Radar for {daily_data['date_display']} via Webhook...")
                         embed = create_daily_release_radar_embed(daily_data)
-                        poster_file = discord.File(daily_data["poster_path"], filename="daily_radar.png")
                         embed.set_image(url="attachment://daily_radar.png")
-                        safe_webhook_send(
+                        success = safe_webhook_send(
                             webhook,
                             embed,
                             username="Steam Release Radar",
-                            file=poster_file
+                            file_path=daily_data["poster_path"],
+                            file_name="daily_radar.png"
                         )
-                        logger.info("Successfully posted Daily Steam Release Radar via webhook!")
+                        if success:
+                            logger.info("Successfully posted Daily Steam Release Radar via webhook!")
+                        else:
+                            logger.warning("Failed to dispatch Daily Steam Release Radar webhook. Will retry on next check.")
+                            monitor.state.get("daily_release_radar", {}).pop("last_posted_date", None)
                 except Exception as e:
                     logger.error(f"Error checking Daily Steam Release Radar: {e}")
 
@@ -1281,7 +1285,7 @@ def start_health_server():
                         pass
 
                 expected_pw = get_admin_password(config)
-                if password and password == expected_pw:
+                if password and password.strip() == expected_pw.strip():
                     token = generate_session_token(password)
                     cookie_val = f"admin_session={token}; Path=/; HttpOnly; Max-Age=2592000; SameSite=Lax"
                     if "application/json" in content_type:
@@ -1355,9 +1359,14 @@ def start_health_server():
                             from discord import SyncWebhook
                             wb = SyncWebhook.from_url(webhook_url)
                             embed = create_daily_release_radar_embed(daily_data)
-                            poster_file = discord.File(daily_data["poster_path"], filename="daily_radar.png")
                             embed.set_image(url="attachment://daily_radar.png")
-                            safe_webhook_send(wb, embed, username="Steam Release Radar", file=poster_file)
+                            safe_webhook_send(
+                                wb,
+                                embed,
+                                username="Steam Release Radar",
+                                file_path=daily_data["poster_path"],
+                                file_name="daily_radar.png"
+                            )
                         msg = "Daily Steam Release Radar generated & dispatched to Discord!"
                     elif action == "check_launches":
                         logger.info("Admin Web Interface: Manual trigger for Steam Launches...")

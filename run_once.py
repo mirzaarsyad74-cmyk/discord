@@ -393,13 +393,13 @@ def main():
         daily_data = monitor.check_daily_release_radar()
         if daily_data:
             embed = create_daily_release_radar_embed(daily_data)
-            poster_file = discord.File(daily_data["poster_path"], filename="daily_radar.png")
             embed.set_image(url="attachment://daily_radar.png")
             safe_webhook_send(
                 webhook,
                 embed,
                 username="Steam Release Radar",
-                file=poster_file
+                file_path=daily_data["poster_path"],
+                file_name="daily_radar.png"
             )
             logger.info("Posted Daily Steam Release Radar!")
 

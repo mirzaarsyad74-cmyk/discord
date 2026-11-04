@@ -134,8 +134,8 @@ def save_effective_config(new_cfg: Dict[str, Any]):
 
 
 def get_admin_password(cfg: Dict[str, Any]) -> str:
-    """Gets admin password from environment or config."""
-    return os.getenv("ADMIN_PASSWORD", "").strip() or cfg.get("admin_password", "admin74")
+    """Gets admin password from environment or config (defaults to 'admin')."""
+    return os.getenv("ADMIN_PASSWORD", "").strip() or cfg.get("admin_password", "admin").strip() or "admin"
 
 
 def generate_session_token(password: str) -> str:
@@ -256,7 +256,7 @@ LOGIN_HTML = """<!DOCTYPE html>
     <form id="loginForm" method="POST" action="/api/login">
       <div class="form-group">
         <label for="password">Admin Password</label>
-        <input type="password" id="password" name="password" placeholder="Enter admin password..." required autofocus>
+        <input type="password" id="password" name="password" placeholder="Enter admin password (default: admin)..." required autofocus>
       </div>
       <button type="submit">Unlock Dashboard 🚀</button>
     </form>
@@ -993,3 +993,4 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </body>
 </html>
 """
+
