@@ -2748,11 +2748,11 @@ def create_steam_new_launch_embed(item: Dict[str, Any]):
     embed.add_field(name="🕒 Discovered", value=f"`{item.get('time_kl', 'Now')}`", inline=True)
 
     embed.add_field(
-        name="🔗 Quick Access & Web View",
+        name="🔗 Quick Access Links",
         value=(
-            f"🌐 **[Open Web View (Store Page)]({store_url})**\n"
-            f"🖥️ **[Launch in Steam Client App](steam://store/{appid})**\n"
-            f"📊 **[View on SteamDB Info](https://steamdb.info/app/{appid}/)**"
+            f"🌐 **[Open Web Store (Web View)]({store_url})**\n"
+            f"📊 **[View on SteamDB Info](https://steamdb.info/app/{appid}/)**\n"
+            f"💬 **[Steam Community Hub](https://steamcommunity.com/app/{appid})**"
         ),
         inline=False
     )

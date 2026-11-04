@@ -365,7 +365,7 @@ def create_daily_release_radar_embed(data: Dict[str, Any]):
         title = it.get("title", "Release")
         url = it.get("store_url", "https://store.steampowered.com/")
         price = it.get("price", "Free / Unpriced")
-        lines.append(f"{icon} **[{title}]({url})** — `{tag} {price}`\n   *🌐 [Web View]({url}) • 🖥️ [Steam App](steam://store/{it['appid']})*")
+        lines.append(f"{icon} **[{title}]({url})** — `{tag} {price}`\n   *🌐 [Web View]({url}) • 📊 [SteamDB](https://steamdb.info/app/{it['appid']}/)*")
 
     embed.add_field(
         name="🚀 Featured Releases",

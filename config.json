@@ -47,6 +47,7 @@
   "daily_release_radar_hour_gmt8": 0,
   "watch_csrin": false,
   "enable_global_feed": false,
+  "admin_password": "admin",
   "subforum_feeds": [
     "10"
   ],

@@ -43,6 +43,11 @@ load_dotenv()
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 
 def load_config() -> dict:
+    try:
+        from web_admin import load_effective_config
+        return load_effective_config()
+    except Exception as e:
+        logger.error(f"Error loading config via web_admin: {e}")
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -60,6 +65,7 @@ def load_config() -> dict:
         "watch_steam_free_weekends": True,
         "watch_steam_new_launches": True,
         "watch_steam_dlc_launches": True,
+        "watch_daily_release_radar": True,
         "watch_fitgirl": False,
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
@@ -68,23 +74,21 @@ def load_config() -> dict:
         "watch_flingtrainer": True,
         "watch_csrin": False,
         "enable_global_feed": False,
-        "subforum_feeds": [],
-        "topics": [],
-        "subforums": [],
-        "releases_only": True,
-        "csrin_cracks_bypasses_only": True,
-        "check_interval_seconds": 120,
-        "alert_on_title_change": True,
-        "alert_on_op_update": True,
-        "send_latest_post_on_startup": False
+        "check_interval_seconds": 60,
+        "admin_password": "admin"
     }
 
 def save_config(cfg: dict):
     try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        from web_admin import save_effective_config
+        save_effective_config(cfg)
     except Exception as e:
-        logger.error(f"Error saving config.json: {e}")
+        logger.error(f"Error saving config via web_admin: {e}")
+        try:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
 
 config = load_config()
 
@@ -1096,23 +1100,96 @@ def start_health_server():
 
     from http.server import HTTPServer, BaseHTTPRequestHandler
     import threading
+    import urllib.parse
+    from web_admin import (
+        is_authenticated,
+        get_admin_password,
+        generate_session_token,
+        load_effective_config,
+        save_effective_config,
+        LOGIN_HTML,
+        DASHBOARD_HTML,
+        RECENT_LOGS
+    )
 
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path.startswith("/debug"):
+            parsed_url = urllib.parse.urlparse(self.path)
+            clean_path = parsed_url.path
+
+            # 1. Admin Dashboard
+            if clean_path in ["/", "/admin", "/admin/"]:
+                if is_authenticated(self.headers.get("Cookie", ""), config):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(DASHBOARD_HTML.encode("utf-8"))
+                else:
+                    self.send_response(302)
+                    self.send_header("Location", "/login")
+                    self.end_headers()
+                return
+
+            # 2. Login Page
+            if clean_path in ["/login", "/login/"]:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(LOGIN_HTML.encode("utf-8"))
+                return
+
+            # 3. Logout Endpoint
+            if clean_path in ["/logout", "/logout/"]:
+                self.send_response(302)
+                self.send_header("Set-Cookie", "admin_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+                self.send_header("Location", "/login")
+                self.end_headers()
+                return
+
+            # 4. Config API (Get active settings)
+            if clean_path == "/api/config":
+                if not is_authenticated(self.headers.get("Cookie", ""), config):
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                # Return current effective config
+                self.wfile.write(json.dumps(config).encode("utf-8"))
+                return
+
+            # 5. Live Logs API
+            if clean_path == "/api/logs":
+                if not is_authenticated(self.headers.get("Cookie", ""), config):
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(list(RECENT_LOGS)).encode("utf-8"))
+                return
+
+            # 6. Diagnostics / Debug Endpoint
+            if clean_path.startswith("/debug"):
                 import socket
                 import urllib3
                 urllib3.disable_warnings()
                 report = {}
                 
-                # 1. DNS
+                # DNS
                 try:
                     ip = socket.gethostbyname("steamunlockonennabe.duckdns.org")
                     report["dns"] = f"Resolved to {ip}"
                 except Exception as ex:
                     report["dns"] = f"Failed: {type(ex).__name__}: {ex}"
 
-                # 2. Direct TCP connect to 34.158.47.50:443
+                # TCP connects
                 try:
                     s = socket.create_connection(("34.158.47.50", 443), timeout=3)
                     s.close()
@@ -1120,7 +1197,6 @@ def start_health_server():
                 except Exception as ex:
                     report["tcp_ip"] = f"Failed: {type(ex).__name__}: {ex}"
 
-                # 3. Direct TCP connect to domain:443
                 try:
                     s = socket.create_connection(("steamunlockonennabe.duckdns.org", 443), timeout=3)
                     s.close()
@@ -1129,7 +1205,6 @@ def start_health_server():
                     report["tcp_domain"] = f"Failed: {type(ex).__name__}: {ex}"
 
                 import requests
-                # 4. HTTP request
                 for target, headers, verify in [
                     ("https://steamunlockonennabe.duckdns.org/api/onennabe", {"User-Agent": "Mozilla/5.0"}, True),
                     ("https://34.158.47.50/api/onennabe", {"Host": "steamunlockonennabe.duckdns.org", "User-Agent": "Mozilla/5.0"}, False)
@@ -1142,20 +1217,13 @@ def start_health_server():
                     except Exception as ex:
                         report[target] = f"Failed: {type(ex).__name__}: {ex}"
 
-                # 5. Test fetch_suo_catalog
-                try:
-                    from external_monitors import fetch_suo_catalog
-                    cat = fetch_suo_catalog(limit=50, timeout=4)
-                    report["fetch_suo_catalog"] = f"Success: {len(cat)} games parsed, top: {cat[0].get('name') if cat else None}"
-                except Exception as ex:
-                    report["fetch_suo_catalog"] = f"Failed: {type(ex).__name__}: {ex}"
-
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps(report, indent=2).encode("utf-8"))
                 return
 
+            # 7. Koyeb Health Endpoint
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -1184,10 +1252,147 @@ def start_health_server():
             resp = json.dumps({
                 "status": "healthy",
                 "service": "game-release-monitor",
-                "check_interval_seconds": CHECK_INTERVAL,
+                "check_interval_seconds": int(config.get("check_interval_seconds", 60)),
                 "active_sources": active_srcs
             })
             self.wfile.write(resp.encode("utf-8"))
+
+        def do_POST(self):
+            parsed_url = urllib.parse.urlparse(self.path)
+            clean_path = parsed_url.path
+            content_length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_length) if content_length > 0 else b""
+
+            # 1. Login Authentication
+            if clean_path == "/api/login":
+                password = ""
+                content_type = self.headers.get("Content-Type", "")
+                if "application/json" in content_type:
+                    try:
+                        data = json.loads(body_bytes.decode("utf-8"))
+                        password = data.get("password", "")
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        parsed_form = urllib.parse.parse_qs(body_bytes.decode("utf-8"))
+                        password = parsed_form.get("password", [""])[0]
+                    except Exception:
+                        pass
+
+                expected_pw = get_admin_password(config)
+                if password and password == expected_pw:
+                    token = generate_session_token(password)
+                    cookie_val = f"admin_session={token}; Path=/; HttpOnly; Max-Age=2592000; SameSite=Lax"
+                    if "application/json" in content_type:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Set-Cookie", cookie_val)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"status": "ok", "token": token}).encode("utf-8"))
+                    else:
+                        self.send_response(302)
+                        self.send_header("Set-Cookie", cookie_val)
+                        self.send_header("Location", "/admin")
+                        self.end_headers()
+                else:
+                    if "application/json" in content_type:
+                        self.send_response(401)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"status": "error", "message": "Invalid password"}).encode("utf-8"))
+                    else:
+                        self.send_response(302)
+                        self.send_header("Location", "/login?error=1")
+                        self.end_headers()
+                return
+
+            # 2. Save Config API
+            if clean_path == "/api/config":
+                if not is_authenticated(self.headers.get("Cookie", ""), config):
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                    return
+
+                try:
+                    new_data = json.loads(body_bytes.decode("utf-8"))
+                    for k, v in new_data.items():
+                        config[k] = v
+                    save_config(config)
+                    logger.info("Admin Web Interface: Configuration updated & synced to Cloud DB!")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "ok", "message": "Settings saved successfully!"}).encode("utf-8"))
+                except Exception as ex:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": str(ex)}).encode("utf-8"))
+                return
+
+            # 3. Quick Trigger API
+            if clean_path == "/api/trigger":
+                if not is_authenticated(self.headers.get("Cookie", ""), config):
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                    return
+
+                try:
+                    payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+                    action = payload.get("action", "")
+                    webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "")
+
+                    if action == "daily_radar":
+                        logger.info("Admin Web Interface: Manual trigger for Daily Release Radar...")
+                        from daily_release_radar import check_daily_release_radar, create_daily_release_radar_embed
+                        daily_data = check_daily_release_radar(monitor.state, force=True)
+                        if daily_data and webhook_url:
+                            from discord import SyncWebhook
+                            wb = SyncWebhook.from_url(webhook_url)
+                            embed = create_daily_release_radar_embed(daily_data)
+                            poster_file = discord.File(daily_data["poster_path"], filename="daily_radar.png")
+                            embed.set_image(url="attachment://daily_radar.png")
+                            safe_webhook_send(wb, embed, username="Steam Release Radar", file=poster_file)
+                        msg = "Daily Steam Release Radar generated & dispatched to Discord!"
+                    elif action == "check_launches":
+                        logger.info("Admin Web Interface: Manual trigger for Steam Launches...")
+                        updates = monitor.check_steam_new_launches()
+                        if updates and webhook_url:
+                            from discord import SyncWebhook
+                            from external_monitors import create_steam_new_launch_embed
+                            wb = SyncWebhook.from_url(webhook_url)
+                            for upd in updates:
+                                u_name = "Steam DLC Launches" if upd.get("item_type") == "dlc" else "Steam Game Launches"
+                                safe_webhook_send(wb, create_steam_new_launch_embed(upd), username=u_name)
+                        msg = f"Steam launches checked! Found {len(updates)} new items."
+                    elif action == "check_deals":
+                        logger.info("Admin Web Interface: Manual trigger for Steam Deals...")
+                        updates = monitor.check_steam_deals()
+                        if updates and webhook_url:
+                            from discord import SyncWebhook
+                            from external_monitors import create_steam_deal_embed
+                            wb = SyncWebhook.from_url(webhook_url)
+                            for upd in updates:
+                                safe_webhook_send(wb, create_steam_deal_embed(upd), username="Steam Specials")
+                        msg = f"Steam deals checked! Found {len(updates)} new deals."
+                    else:
+                        msg = f"Unknown action: {action}"
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "ok", "message": msg}).encode("utf-8"))
+                except Exception as ex:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": str(ex)}).encode("utf-8"))
+                return
 
         def log_message(self, format, *args):
             pass  # Suppress probe spam in logs

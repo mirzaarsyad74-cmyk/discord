@@ -8,6 +8,18 @@ An automated Discord bot that monitors newly published pre-installed Steam games
 
 ---
 
+## 🎛️ Live Admin Web Dashboard (Zero Rebuilds)
+
+Manage all active monitors and settings in real time from any browser (phone or PC):
+
+* **URL**: `https://<your-koyeb-app>.koyeb.app/` or `/admin`
+* **Default Password**: `admin` (changeable directly in the dashboard or via `ADMIN_PASSWORD` env var).
+* **Instant Toggles**: Toggle any monitor ON or OFF with 1 click without rebuilding the app (Steam Launches, DLCs, Daily Radar, Deals, Free Games, Denuvo, Trainers, Repacks, etc.).
+* **Cloud Persistence**: Automatically persists settings to Neon Cloud Database so your custom configuration survives container restarts.
+* **Live Triggers & Logs**: Trigger today's Daily Release Radar or monitor scans immediately and view real-time bot activity logs.
+
+---
+
 ## 🚀 1-Click Deploy to Koyeb (Free 24/7 Cloud Hosting • 1-Minute Scans)
 
 Koyeb runs the bot continuously 24/7 on their **Free Tier** with **no credit card required**, checking for new game releases **every 60 seconds**!
