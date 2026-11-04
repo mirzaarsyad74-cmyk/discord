@@ -50,8 +50,6 @@ COLOR_STEAM_PATCH = 0x38BDF8     # Steam Engine Sky Blue
 COLOR_FREE_WEEKEND = 0x06B6D4    # Electric Cyan
 COLOR_STEAM_NEW_LAUNCH = 0x0284C7 # Steam Launch Valve Cyan / Blue
 COLOR_STEAM_NEW_DLC = 0xD946EF   # Steam DLC Electric Fuchsia / Magenta
-COLOR_GOG = 0x86198F             # GOG Royal Magenta
-COLOR_EPIC = 0x1E293B            # Epic Games Dark Slate / Gunmetal
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
 SUO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/suo_icon.png"
@@ -60,8 +58,6 @@ DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-1
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
 STEAM_DEAL_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_deals_icon.png"
 STEAM_FREE_GAMES_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_games_icon.png"
-GOG_BADGE_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/gog_badge.png"
-EPIC_BADGE_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/epic_badge.png"
 DENUVO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/denuvo_icon.png"
 STEAM_PATCH_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_patch_icon.png"
 STEAM_FREE_WEEKEND_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_weekend_icon.png"
@@ -1973,8 +1969,9 @@ def create_steam_deal_embed(item: Dict[str, Any]):
 
 def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
     """
-    Monitors 100% Free Games & Giveaways across Steam, Epic Games Store, and GOG.com.
-    Formatted in a sleek FreeStuff-style aesthetic with Malaysian Ringgit (MYR) pricing.
+    Monitors 100% Free Steam Games (Free to Keep Forever, Normally Paid):
+    1. Direct Steam Store search specials with maxprice=free and specials=1 (100% discount promotions in MYR).
+    2. Reddit r/FreeGamesOnSteam RSS feed for community-reported giveaways and free claims.
     Deduplicates strictly using seen keys stored in state['steam_free_games'].
     """
     free_state = state.setdefault("steam_free_games", {})
@@ -1983,174 +1980,14 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
     new_items: List[Dict[str, Any]] = []
     newly_seen_keys: List[str] = []
 
-    # ---------------------------------------------------------
-    # 1. Epic Games Store Free Games (Weekly 100% Free Promotions)
-    # ---------------------------------------------------------
-    epic_api_url = "https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=MY&allowCountries=MY"
-    try:
-        req = urllib.request.Request(epic_api_url, headers={"User-Agent": STANDARD_HEADERS["User-Agent"]})
-        with urllib.request.urlopen(req, timeout=12) as r:
-            epic_data = json.loads(r.read())
-            elements = epic_data.get("data", {}).get("Catalog", {}).get("searchStore", {}).get("elements", [])
-            for el in elements:
-                title = el.get("title")
-                promos = el.get("promotions") or {}
-                offers = promos.get("promotionalOffers", [])
-                is_free_now = False
-                end_date_iso = ""
-                if offers:
-                    for po in offers:
-                        for off in po.get("promotionalOffers", []):
-                            if off.get("discountSetting", {}).get("discountPercentage") == 0:
-                                is_free_now = True
-                                end_date_iso = off.get("endDate")
-                                break
-                if not is_free_now or not title:
-                    continue
-
-                item_id = el.get("id") or title.lower()
-                dedup_key = f"epic_{item_id}"
-                if dedup_key in seen_keys:
-                    continue
-
-                until_str = "Limited Time"
-                if end_date_iso:
-                    try:
-                        dt = datetime.fromisoformat(end_date_iso.replace("Z", "+00:00")).astimezone(KL_TZ)
-                        until_str = dt.strftime("%d/%m/%Y, %I:%M %p GMT+8")
-                    except Exception:
-                        until_str = end_date_iso[:10]
-
-                cents = el.get("price", {}).get("totalPrice", {}).get("originalPrice", 0)
-                orig_price_str = f"RM {cents / 100:.2f}" if cents > 0 else "Free Giveaway"
-
-                slug = el.get("productSlug") or el.get("urlSlug")
-                if not slug:
-                    for page in el.get("catalogNs", {}).get("mappings", []):
-                        if page.get("pageSlug"):
-                            slug = page.get("pageSlug")
-                            break
-                if not slug and el.get("offerMappings"):
-                    slug = el["offerMappings"][0].get("pageSlug")
-                store_url = f"https://store.epicgames.com/en-US/p/{slug}" if slug else "https://store.epicgames.com/en-US/free-games"
-
-                # Header image
-                key_images = el.get("keyImages", [])
-                header_img = None
-                for img_type in ["OfferImageWide", "DieselStoreFrontWide", "Thumbnail"]:
-                    for img in key_images:
-                        if img.get("type") == img_type and img.get("url"):
-                            header_img = img.get("url")
-                            break
-                    if header_img:
-                        break
-                if not header_img and key_images:
-                    header_img = key_images[0].get("url")
-
-                seller_name = el.get("seller", {}).get("name") or "Epic Games"
-                for custom_attr in el.get("customAttributes", []):
-                    if custom_attr.get("key") in ("developerName", "publisherName") and custom_attr.get("value"):
-                        seller_name = custom_attr.get("value")
-                        break
-
-                item_obj = {
-                    "platform": "Epic Games",
-                    "title": title,
-                    "store_url": store_url,
-                    "original_price": orig_price_str,
-                    "until_date": until_str,
-                    "header_image": header_img,
-                    "publisher": seller_name,
-                    "badge_icon": EPIC_BADGE_ICON,
-                    "color": COLOR_EPIC,
-                    "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
-                }
-                new_items.append(item_obj)
-                seen_keys.add(dedup_key)
-                newly_seen_keys.append(dedup_key)
-    except Exception as e:
-        logger.error(f"Error checking Epic Games Store free promotions: {e}")
-
-    # ---------------------------------------------------------
-    # 2. GOG.com Free Giveaways (via r/FreeGameFindings + GOG Catalog)
-    # ---------------------------------------------------------
-    try:
-        gog_rss_url = "https://www.reddit.com/r/FreeGameFindings/search.rss?q=GOG+(Game)&restrict_sr=on&sort=new"
-        xml_data = fetch_reddit_feed(gog_rss_url)
-        if xml_data:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(xml_data, "html.parser")
-            for entry in soup.find_all("entry")[:8]:
-                title_tag = entry.find("title")
-                content_tag = entry.find("content")
-                if not title_tag:
-                    continue
-                raw_title = title_tag.get_text(strip=True)
-                if "[gog]" not in raw_title.lower() or "(game)" not in raw_title.lower():
-                    continue
-
-                clean_title = re.sub(r'\[.*?\]|\(.*?\)', '', raw_title).strip()
-                dedup_key = f"gog_{clean_title.lower()}"
-                if dedup_key in seen_keys:
-                    continue
-
-                content_html = content_tag.get_text() if content_tag else ""
-                gog_m = re.search(r'https?://(?:www\.)?gog\.com/(?:[a-zA-Z]{2}/)?(?:game/|giveaway/)?[^\s"\'<>]+', content_html)
-                store_url = gog_m.group(0) if gog_m else "https://www.gog.com/"
-
-                # Query GOG catalog API for exact pricing, publisher, and high-res cover banner
-                header_img = None
-                orig_price_str = "Free Giveaway"
-                publisher_name = "GOG.com"
-
-                try:
-                    cat_term = urllib.parse.quote(clean_title)
-                    cat_url = f"https://catalog.gog.com/v1/catalog?query=like:{cat_term}&limit=1"
-                    req_cat = urllib.request.Request(cat_url, headers={"User-Agent": STANDARD_HEADERS["User-Agent"]})
-                    with urllib.request.urlopen(req_cat, timeout=8) as cat_r:
-                        cat_res = json.loads(cat_r.read())
-                        prods = cat_res.get("products", [])
-                        if prods:
-                            p = prods[0]
-                            header_img = p.get("coverHorizontal")
-                            if p.get("publishers"):
-                                publisher_name = p["publishers"][0]
-                            base_usd = p.get("price", {}).get("baseMoney", {}).get("amount")
-                            if base_usd:
-                                orig_price_str = f"RM {float(base_usd) * 4.40:.2f}"
-                            if p.get("slug"):
-                                store_url = f"https://www.gog.com/en/game/{p['slug']}"
-                except Exception as cat_e:
-                    logger.debug(f"GOG Catalog enrichment error for {clean_title}: {cat_e}")
-
-                if not header_img:
-                    img_m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', content_html)
-                    header_img = img_m.group(1) if img_m else None
-
-                item_obj = {
-                    "platform": "GOG",
-                    "title": clean_title,
-                    "store_url": store_url,
-                    "original_price": orig_price_str,
-                    "until_date": "Limited Time Giveaway",
-                    "header_image": header_img,
-                    "publisher": publisher_name,
-                    "badge_icon": GOG_BADGE_ICON,
-                    "color": COLOR_GOG,
-                    "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
-                }
-                new_items.append(item_obj)
-                seen_keys.add(dedup_key)
-                newly_seen_keys.append(dedup_key)
-    except Exception as e:
-        logger.error(f"Error checking GOG free promotions: {e}")
-
-    # ---------------------------------------------------------
-    # 3. Steam Store 100% Off Specials (Free to Keep Forever)
-    # ---------------------------------------------------------
+    # 1. Check Steam Store 100% Off Specials (Free to Keep Forever)
     steam_search_url = "https://store.steampowered.com/search/results/?query=&start=0&count=50&maxprice=free&specials=1&cc=my&l=en&infinite=1"
+    headers = {
+        "User-Agent": STANDARD_HEADERS["User-Agent"],
+        "Accept": "application/json"
+    }
     try:
-        res = requests.get(steam_search_url, headers={"User-Agent": STANDARD_HEADERS["User-Agent"]}, timeout=12)
+        res = requests.get(steam_search_url, headers=headers, timeout=12)
         if res.status_code == 200:
             data = res.json()
             html_text = data.get("results_html", "")
@@ -2183,10 +2020,10 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
                     publisher_name = "Steam"
 
                     # Enrich with Steam Appdetails for publisher and high-res header
-                    if not str(app_id).startswith("sub_") and app_id.isdigit():
+                    if not str(app_id).startswith("sub_") and str(app_id).isdigit():
                         try:
                             d_url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc=my&l=en"
-                            d_res = requests.get(d_url, headers={"User-Agent": STANDARD_HEADERS["User-Agent"]}, timeout=8)
+                            d_res = requests.get(d_url, headers=headers, timeout=8)
                             if d_res.status_code == 200:
                                 d_json = d_res.json().get(str(app_id), {}).get("data", {})
                                 if d_json.get("publishers"):
@@ -2214,9 +2051,7 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error checking Steam store 100% specials: {e}")
 
-    # ---------------------------------------------------------
-    # 4. Reddit r/FreeGamesOnSteam RSS Feed
-    # ---------------------------------------------------------
+    # 2. Check Reddit r/FreeGamesOnSteam RSS Feed
     try:
         import html
         feed_r = fetch_reddit_feed("https://www.reddit.com/r/FreeGamesOnSteam/new/.rss")
@@ -2268,7 +2103,7 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
 
     # First run initialization (seed seen keys so we don't spam everything on first boot)
     if "seen_keys" not in free_state and newly_seen_keys:
-        logger.info(f"Initializing Free Games tracker across Steam, Epic & GOG with {len(newly_seen_keys)} promotions...")
+        logger.info(f"Initializing Steam 100% Free Games tracker with {len(newly_seen_keys)} promotions...")
         free_state["seen_keys"] = update_seen_list([], newly_seen_keys, max_len=1000)
         return []
 
@@ -2280,49 +2115,39 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
 
 def create_steam_free_game_embed(item: Dict[str, Any]):
     """
-    Builds a Discord Embed for 100% Free Games across Steam, Epic Games, and GOG.com
-    formatted in the clean FreeStuff aesthetic:
+    Builds a Discord Embed for 100% Free Steam Games formatted in the clean FreeStuff aesthetic:
     - Clickable game title
-    - ~~Original Price (MYR)~~ Free until DD/MM/YYYY
-    - 👉 Open in browser ↗ button link
-    - 1:1 platform badge icon in top right thumbnail
+    - ~~Original Price (MYR)~~ Free (Free to keep forever)
+    - 👉 Claim on Steam Store ↗ button link
+    - 1:1 Steam Free Games badge in top right thumbnail
     - Wide banner image in main body
     - Footer with publisher copyright and GMT+8 timestamp
     """
     import discord
-    title = item.get("title", "Free Game")
+    title = item.get("title", "Free Steam Game")
     store_url = item.get("store_url", "https://store.steampowered.com/")
     orig = item.get("original_price", "")
-    until = item.get("until_date", "")
-    platform = item.get("platform", "Steam")
     badge_icon = item.get("badge_icon", STEAM_FREE_GAMES_ICON)
-    publisher = item.get("publisher") or platform
-    color = item.get("color", COLOR_STEAM_FREE)
+    publisher = item.get("publisher", "Steam")
 
     if orig and orig.lower() not in ["free", "free giveaway", "free claim"]:
-        if until and until.lower() != "limited time":
-            price_line = f"~~{orig}~~ **Free** until {until}"
-        else:
-            price_line = f"~~{orig}~~ **Free**"
+        price_line = f"~~{orig}~~ **Free to Keep** (100% Discount)"
     else:
-        if until and until.lower() != "limited time":
-            price_line = f"**100% Free** until {until}"
-        else:
-            price_line = f"**100% Free to Keep**"
+        price_line = f"**100% Free to Keep Forever**"
 
-    description = f"{price_line}\n\n👉 **[Open in browser ↗]({store_url})**"
+    description = f"{price_line}\n\n👉 **[Claim on Steam Store ↗]({store_url})**"
 
     embed = discord.Embed(
         title=title,
         url=store_url,
         description=description,
-        color=color
+        color=COLOR_STEAM_FREE
     )
 
     if item.get("header_image"):
         embed.set_image(url=item["header_image"])
     embed.set_thumbnail(url=badge_icon)
-    embed.set_footer(text=f"via Free Games Monitor • © {publisher} • GMT+8", icon_url=badge_icon)
+    embed.set_footer(text=f"Steam Free Games Monitor • © {publisher} • GMT+8", icon_url=badge_icon)
     return embed
 
 

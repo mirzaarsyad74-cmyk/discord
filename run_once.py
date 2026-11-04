@@ -261,15 +261,15 @@ def main():
                 safe_webhook_send(webhook, embed, username="Steam Specials")
                 logger.info(f"Posted Steam Deal: {upd['name']} (-{upd['discount_percent']}%)")
 
-    # 6b. Free Games Watcher (Steam, Epic Games, GOG - FreeStuff Style)
+    # 6b. Steam 100% Free Games Watcher (Free to Keep Forever)
     if config.get("watch_steam_free_games", True):
-        logger.info("Checking for 100% Free Games across Steam, Epic & GOG...")
+        logger.info("Checking 100% Free Steam Games & Giveaways...")
         free_updates = monitor.check_steam_free_games()
         if free_updates:
             for upd in free_updates:
                 embed = create_steam_free_game_embed(upd)
-                safe_webhook_send(webhook, embed, username="Free Games Monitor")
-                logger.info(f"Posted Free Game [{upd.get('platform', 'Store')}]: {upd['title']}")
+                safe_webhook_send(webhook, embed, username="Steam Free Games")
+                logger.info(f"Posted Steam Free Game: {upd['title']}")
 
     # 7. Steam Client Version Watch (OpenSteam001/steam-monitor protobuf)
     if config.get("watch_steam_versions", True):
