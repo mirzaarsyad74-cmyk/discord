@@ -651,6 +651,13 @@ class ForumMonitor:
         self.save_state()
         return updates
 
+    def check_steam_new_launches(self, include_games: bool = True, include_dlc: bool = True) -> List[Dict[str, Any]]:
+        """Checks for newly launched full games and DLC releases on Steam."""
+        from external_monitors import check_steam_new_launches
+        updates = check_steam_new_launches(self.state, include_games=include_games, include_dlc=include_dlc)
+        self.save_state()
+        return updates
+
 
 
     def remove_topic(self, topic_id: str):

@@ -38,13 +38,13 @@ STEAM_VERSION_PATTERNS = [
 
 # Patterns representing questions, casual chatter, or troubleshooting comments (to exclude false positives)
 QUESTION_PATTERNS = [
-    r'(?i)\b(?:any|when|where|is there|does anyone have|how to|can someone|can somebody|can anybody|will there be|anyone got|someone have|somebody have)\b.*\b(?:crack|repack|bypass|hypervisor|csf|update|clean steam files|files?)\b',
+    r'(?i)\b(?:any|when|where|is there|does anyone (?:have|has)|how to|can someone|can somebody|can anybody|will there be|anyone (?:got|have|has)|someone (?:have|has)|somebody (?:have|has))\b.*\b(?:crack|repack|bypass|hypervisor|csf|update|clean steam files|files?|link)\b',
     r'(?i)\b(?:can|could|please|pls)\s+(?:someone|somebody|anybody|anyone)\s+(?:post|share|upload|send|provide|give|dump)\b',
     r'(?i)\b(?:can\s+you\s+explain|i\s+don\'?t\s+understand|what\s+does\s+.*?\s+mean|how\s+did\s+you\s+(?:get|make|run))\b',
     r'(?i)\b(?:clean steam files|csf|crack|bypass|hypervisor|repack)\s*(?:when|eta|pls|please|\?)\b',
     r'(?i)\b(?:thanks?|thx|thank you|working|works|good job|tested|save game|anyone have this|tested on|confirm working)\b',
     r'(?i)\b(?:not working|doesn\'?t work|wont work|won\'?t work|crash(?:es|ing)?|black screen|error|failed to launch|can\'?t (?:even )?launch|cannot launch|cant launch|won\'?t launch|doesn\'?t launch)\b',
-    r'(?i)\b(?:request(?:ing)?|need|looking for|still waiting|any news|any update|no crack|no bypass)\b',
+    r'(?i)\b(?:request(?:ing)?|need|looking for|still waiting|any news|any update|no crack|no bypass|any\s+(?:fixes?|workarounds?))\b',
     r'(?i)\b(?:false positive|virus|trojan|malware|windows defender|antivirus)\b',
     r'(?i)\b(?:where (?:do i|to) (?:put|paste|copy)|how (?:do i|to) (?:run|install|apply))\b',
     r'\?\s*$'  # Post ends with a question mark
@@ -52,8 +52,8 @@ QUESTION_PATTERNS = [
 
 # Download links or file hosts
 DOWNLOAD_LINK_PATTERNS = [
-    r'(?i)\b(?:https?://|magnet:\?xt=)',
-    r'(?i)\b(?:mega\.nz|pixeldrain|1fichier|gofile|mediafire|qiwi|rapidgator|drive\.google\.com|multiup|krakenfiles|ddownload|buzzheavier|datanodes)\b'
+    r'(?i)\bmagnet:\?xt=[a-zA-Z0-9:+%._-]+',
+    r'(?i)\bhttps?://[^\s)\]"\'>]*(?:mega\.nz|pixeldrain|1fichier|gofile|mediafire|qiwi|rapidgator|drive\.google\.com|multiup|krakenfiles|ddownload|buzzheavier|datanodes|send\.cm|bowfile|rootz|filecrypt|mirror|download|torrent)[^\s)\]"\'>]*'
 ]
 
 # Structural markers common in real releases

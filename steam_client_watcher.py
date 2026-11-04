@@ -13,7 +13,9 @@ KL_TZ = timezone(timedelta(hours=8))  # Kuala Lumpur / Malaysia Time (UTC+08:00)
 STEAM_MONITOR_RAW_README = "https://raw.githubusercontent.com/OpenSteam001/steam-monitor/protobuf/README.md"
 STEAM_MONITOR_COMMITS_ATOM = "https://github.com/OpenSteam001/steam-monitor/commits/protobuf.atom"
 STEAM_MONITOR_REPO_URL = "https://github.com/OpenSteam001/steam-monitor/tree/protobuf"
-STEAM_LOGO_URL = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_gameoverlay_icon.png"
+STEAM_LOGO_URL = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_client_stable_icon.png"
+STEAM_CLIENT_STABLE_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_client_stable_icon.png"
+STEAM_CLIENT_BETA_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_client_beta_icon.png"
 STEAM_CLIENT_NEWS_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=593110&count=10&maxlength=2000&format=json&feeds=steam_community_announcements"
 
 
@@ -374,19 +376,32 @@ def create_steam_client_embed(
         changelog = kwargs.get("changelog")
 
     chan = str(channel_name or "Stable")
-    branch_display = "Stable Client" if chan.lower() == "stable" else f"Steam Beta Branch ({chan})"
-    embed_title = title or f"🎮 Steam Client Update ({branch_display})"
+    is_beta = "beta" in chan.lower()
+
+    if is_beta:
+        branch_display = f"Steam Beta Branch ({chan})" if chan.lower() != "beta" else "Steam Beta Branch"
+        badge_icon = STEAM_CLIENT_BETA_ICON
+        embed_color = 0xF59E0B  # Vibrant Amber / Orange for Beta
+        embed_title = title or f"🧪 Steam Client Beta Update ({chan})"
+        footer_sub = "Beta Preview"
+    else:
+        branch_display = "Steam Stable Client"
+        badge_icon = STEAM_CLIENT_STABLE_ICON
+        embed_color = 0x0284C7  # Steam Sapphire Blue for Stable
+        embed_title = title or "🎮 Steam Client Stable Update"
+        footer_sub = "Official Stable Release"
+
     target_url = url or "https://store.steampowered.com/news/app/593110"
 
     embed = discord.Embed(
         title=embed_title,
         url=target_url,
-        color=0x0078D4  # Valve Steam Sapphire Blue
+        color=embed_color
     )
-    embed.set_thumbnail(url=STEAM_LOGO_URL)
+    embed.set_thumbnail(url=badge_icon)
 
     embed.add_field(
-        name="📌 Steam Beta Branch",
+        name="📌 Steam Branch",
         value=f"**{branch_display}**",
         inline=True
     )
@@ -428,7 +443,7 @@ def create_steam_client_embed(
         inline=False
     )
 
-    embed.set_footer(text="Steam Client Watch • Official Valve Announcement • GMT+8", icon_url=STEAM_LOGO_URL)
+    embed.set_footer(text=f"Steam Client Watch • {footer_sub} • GMT+8", icon_url=badge_icon)
     return embed
 
 

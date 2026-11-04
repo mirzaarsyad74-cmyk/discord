@@ -36,7 +36,8 @@ from external_monitors import (
     FLING_ICON,
     create_denuvo_embed,
     create_steam_patch_embed,
-    create_steam_free_weekend_embed
+    create_steam_free_weekend_embed,
+    create_steam_new_launch_embed
 )
 
 # UTF-8 encoding support
@@ -75,6 +76,8 @@ def load_config() -> dict:
         "watch_denuvo_status": True,
         "watch_steam_app_patches": True,
         "watch_steam_free_weekends": True,
+        "watch_steam_new_launches": True,
+        "watch_steam_dlc_launches": True,
         "watch_fitgirl": False,
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
@@ -200,9 +203,6 @@ def main():
             logger.info(f"Checking CS.RIN.RU Global Live Feed (f={fid})...")
             feed_posts = monitor.check_live_feed(forum_id=fid)
             for post in feed_posts:
-                if monitor.is_post_seen(post.topic_id, post):
-                    continue
-
                 is_rel, release_label = classify_release(post, cracks_only=cracks_only)
                 if not is_rel:
                     monitor.mark_post_seen(post.topic_id, post)
@@ -261,15 +261,15 @@ def main():
                 safe_webhook_send(webhook, embed, username="Steam Specials")
                 logger.info(f"Posted Steam Deal: {upd['name']} (-{upd['discount_percent']}%)")
 
-    # 6b. Steam 100% Free Games Watcher (Free to Keep Forever)
+    # 6b. Free Games Watcher (Steam, Epic Games, GOG - FreeStuff Style)
     if config.get("watch_steam_free_games", True):
-        logger.info("Checking for 100% Free Steam Games & Giveaways...")
+        logger.info("Checking for 100% Free Games across Steam, Epic & GOG...")
         free_updates = monitor.check_steam_free_games()
         if free_updates:
             for upd in free_updates:
                 embed = create_steam_free_game_embed(upd)
-                safe_webhook_send(webhook, embed, username="Steam Free Games")
-                logger.info(f"Posted Steam Free Game: {upd['title']}")
+                safe_webhook_send(webhook, embed, username="Free Games Monitor")
+                logger.info(f"Posted Free Game [{upd.get('platform', 'Store')}]: {upd['title']}")
 
     # 7. Steam Client Version Watch (OpenSteam001/steam-monitor protobuf)
     if config.get("watch_steam_versions", True):
@@ -278,7 +278,9 @@ def main():
         if steam_updates:
             for upd in steam_updates:
                 embed = create_steam_monitor_embed(upd)
-                safe_webhook_send(webhook, embed, username="Steam Client Watch")
+                is_beta = "beta" in str(upd.get("channel_name", "")).lower()
+                client_bot_name = "Steam Client Beta" if is_beta else "Steam Client Stable"
+                safe_webhook_send(webhook, embed, username=client_bot_name)
                 logger.info(f"Posted Steam Client Update: {upd.get('title')} ({upd.get('branch_display')})")
 
     # 8. FitGirl Repacks Watcher (Signature Magenta Color)
@@ -370,6 +372,19 @@ def main():
                 embed = create_steam_free_weekend_embed(upd)
                 safe_webhook_send(webhook, embed, username="Steam Free Weekend")
                 logger.info(f"Posted Steam Free Weekend: {upd.get('title')}")
+
+    # 14. Steam New Game & DLC Launches Watcher
+    if config.get("watch_steam_new_launches", True) or config.get("watch_steam_dlc_launches", True):
+        logger.info("Checking Steam New Game & DLC Launches...")
+        inc_games = config.get("watch_steam_new_launches", True)
+        inc_dlc = config.get("watch_steam_dlc_launches", True)
+        launch_updates = monitor.check_steam_new_launches(include_games=inc_games, include_dlc=inc_dlc)
+        if launch_updates:
+            for upd in launch_updates:
+                u_name = "Steam DLC Launches" if upd.get("item_type") == "dlc" else "Steam Game Launches"
+                embed = create_steam_new_launch_embed(upd)
+                safe_webhook_send(webhook, embed, username=u_name)
+                logger.info(f"Posted Steam Launch [{upd.get('item_type')}]: {upd.get('title')}")
 
     logger.info("Single-run execution finished successfully!")
 

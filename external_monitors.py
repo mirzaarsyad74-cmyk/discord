@@ -48,6 +48,10 @@ COLOR_DENUVO_REMOVED = 0x10B981  # Emerald Green (Clean / Denuvo Removed)
 COLOR_DENUVO_ADDED = 0xEF4444    # Danger Crimson (Denuvo Added)
 COLOR_STEAM_PATCH = 0x38BDF8     # Steam Engine Sky Blue
 COLOR_FREE_WEEKEND = 0x06B6D4    # Electric Cyan
+COLOR_STEAM_NEW_LAUNCH = 0x0284C7 # Steam Launch Valve Cyan / Blue
+COLOR_STEAM_NEW_DLC = 0xD946EF   # Steam DLC Electric Fuchsia / Magenta
+COLOR_GOG = 0x86198F             # GOG Royal Magenta
+COLOR_EPIC = 0x1E293B            # Epic Games Dark Slate / Gunmetal
 
 STEAMRIP_ICON = "https://steamrip.com/wp-content/uploads/2021/06/cropped-favicon1-192x192.png"
 SUO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/suo_icon.png"
@@ -56,9 +60,13 @@ DODI_ICON = "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-1
 REDDIT_ICON = "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png"
 STEAM_DEAL_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_deals_icon.png"
 STEAM_FREE_GAMES_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_games_icon.png"
+GOG_BADGE_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/gog_badge.png"
+EPIC_BADGE_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/epic_badge.png"
 DENUVO_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/denuvo_icon.png"
 STEAM_PATCH_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_patch_icon.png"
 STEAM_FREE_WEEKEND_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_free_weekend_icon.png"
+STEAM_NEW_LAUNCH_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_launch_icon.png"
+STEAM_NEW_DLC_ICON = "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_dlc_icon.png"
 ONLINEFIX_ICON = "https://online-fix.me/apple-touch-icon.png"
 WEMOD_ICON = "https://www.wemod.com/static/images/device-icons/favicon-192-ce0bc030f3.png"
 FLING_ICON = "https://flingtrainer.com/wp-content/uploads/2019/05/cropped-free-icon-bw_icon-template-psd-3-3-200x200.png"
@@ -1079,7 +1087,7 @@ def create_wemod_embed(item: Dict[str, Any]):
 def check_fling_feed(state: dict) -> List[Dict[str, Any]]:
     """
     Checks for newly released game trainers and trainer cheat updates from FLiNG Trainer.
-    Monitors live RSS feed: https://flingtrainer.com/feed/
+    Monitors live homepage (https://flingtrainer.com/) with fallback to RSS feed.
     Extracts game title, trainer title, options count, game version, updated date,
     cheat options list, and high-resolution trainer screenshot image.
     Uses strict FIFO ordered tracking to prevent duplicate postings.
@@ -1088,190 +1096,207 @@ def check_fling_feed(state: dict) -> List[Dict[str, Any]]:
     known_trainers = fling_state.setdefault("known_trainers", {})
     seen_keys = set(str(x) for x in fling_state.get("seen_keys", []))
 
+    items: List[Dict[str, Any]] = []
+
+    # 1. Scrape FLiNG homepage (captures both brand-new and recently modified trainers)
     try:
-        content = fetch_web_content(FLING_FEED_URL, timeout=12)
-        if not content:
-            return []
-
-        # Parse RSS XML
-        import xml.etree.ElementTree as ET
-        items = []
-        try:
-            root = ET.fromstring(content.encode("utf-8") if isinstance(content, str) else content)
-            channel = root.find("channel")
-            if channel is not None:
-                items = channel.findall("item")
-        except Exception as e:
-            logger.debug(f"XML parse failed ({e}), falling back to BeautifulSoup for FLiNG feed")
-            soup = BeautifulSoup(content, "html.parser")
-            items = soup.find_all("item")
-
-        if not items:
-            return []
-
-        # First-run initialization: populate initial games without sending historical notifications
-        if not known_trainers and not seen_keys:
-            logger.info(f"Initializing FLiNG Trainer tracker with {len(items[:30])} current games...")
-            init_keys = []
-            for it in items[:30]:
-                link = ""
-                link_tag = it.find("link")
-                if link_tag is not None:
-                    link = link_tag.text if hasattr(link_tag, "text") and link_tag.text else link_tag.get_text(strip=True)
-                clean_link = link.split("?")[0].strip() if link else ""
-                if not clean_link:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        }
+        r = requests.get(FLING_BASE_URL, headers=headers, timeout=12)
+        if r.status_code == 200:
+            r.encoding = "utf-8"
+            soup = BeautifulSoup(r.text, "html.parser")
+            articles = soup.find_all("article")
+            for art in articles:
+                title_el = art.find(["h1", "h2", "h3"], class_="post-title")
+                a_tag = title_el.find("a") if title_el else None
+                if not a_tag or not a_tag.get("href"):
                     continue
+                url = a_tag["href"].split("?")[0].strip()
+                title = a_tag.get_text(strip=True)
 
-                content_encoded = ""
-                if hasattr(it, "findall"):
-                    for child in it:
-                        if "encoded" in getattr(child, "tag", ""):
-                            content_encoded = child.text or ""
-                desc_text = ""
-                desc_tag = it.find("description")
-                if desc_tag is not None:
-                    desc_text = desc_tag.text if hasattr(desc_tag, "text") and desc_tag.text else desc_tag.get_text(strip=True)
+                thumb_el = art.find("div", class_="post-details-thumb")
+                img_tag = thumb_el.find("img") if thumb_el else None
+                img_url = img_tag.get("src") if img_tag else None
 
-                meta_text = content_encoded or desc_text
-                options_m = re.search(r'(\d+)\s+Options', meta_text, re.I)
+                day = art.find("div", class_="post-details-day")
+                month = art.find("div", class_="post-details-month")
+                year = art.find("div", class_="post-details-year")
+                d_str = f"{day.get_text(strip=True)} {month.get_text(strip=True)} {year.get_text(strip=True)}" if (day and month and year) else ""
+
+                entry_el = art.find("div", class_="entry")
+                entry_text = entry_el.get_text(" ", strip=True) if entry_el else ""
+
+                options_m = re.search(r'(\d+)\s+Options', entry_text, re.I)
                 options_cnt = int(options_m.group(1)) if options_m else 0
 
-                version_m = re.search(r'Game Version:\s*([^·\n<]+)', meta_text, re.I)
-                game_ver = version_m.group(1).strip() if version_m else ""
+                ver_m = re.search(r'Game Version:\s*([^·\n<]+)', entry_text, re.I)
+                game_ver = ver_m.group(1).strip() if ver_m else "v1.0+"
+                game_ver = re.sub(r'(?i)\s*continue reading.*$', '', game_ver).strip()
 
-                updated_m = re.search(r'Last Updated:\s*([^·\n<]+)', meta_text, re.I)
-                last_upd = updated_m.group(1).strip() if updated_m else ""
+                upd_m = re.search(r'Last Updated:\s*([0-9\.\-]+)', entry_text, re.I)
+                last_upd = upd_m.group(1).strip() if upd_m else ""
 
-                event_key = f"{clean_link}:{options_cnt}:{game_ver}:{last_upd}"
-                known_trainers[clean_link] = {
+                game_name = re.sub(r'\s+Trainer.*$', '', title, flags=re.I).strip()
+                if not game_name:
+                    game_name = title or "Unknown Game"
+
+                items.append({
+                    "link": url,
+                    "title": title,
+                    "game_name": game_name,
                     "options_count": options_cnt,
                     "game_version": game_ver,
                     "last_updated": last_upd,
-                    "init_seen": True
-                }
-                init_keys.append(event_key)
-            fling_state["seen_keys"] = update_seen_list([], init_keys, max_len=600)
-            return []
-
-        new_items = []
-        newly_seen_keys = []
-
-        for it in items[:25]:
-            link = ""
-            link_tag = it.find("link")
-            if link_tag is not None:
-                link = link_tag.text if hasattr(link_tag, "text") and link_tag.text else link_tag.get_text(strip=True)
-            clean_link = link.split("?")[0].strip() if link else ""
-            if not clean_link:
-                continue
-
-            title_tag = it.find("title")
-            title = (title_tag.text if hasattr(title_tag, "text") and title_tag.text else title_tag.get_text(strip=True)) if title_tag is not None else ""
-
-            # Categories & game name
-            cats = []
-            if hasattr(it, "findall"):
-                for c in it.findall("category"):
-                    c_txt = c.text if hasattr(c, "text") and c.text else c.get_text(strip=True)
-                    if c_txt:
-                        cats.append(c_txt.strip())
-            else:
-                for c in it.find_all("category"):
-                    c_txt = c.get_text(strip=True)
-                    if c_txt:
-                        cats.append(c_txt)
-
-            game_cats = [c for c in cats if c.lower() != "trainer"]
-            game_name = game_cats[0] if game_cats else re.sub(r'\s+Trainer.*$', '', title, flags=re.I).strip()
-            if not game_name:
-                game_name = title or "Unknown Game"
-
-            # PubDate
-            pubdate_tag = it.find("pubdate") or it.find("pubDate")
-            pub_date = (pubdate_tag.text if hasattr(pubdate_tag, "text") and pubdate_tag.text else pubdate_tag.get_text(strip=True)) if pubdate_tag is not None else ""
-
-            content_encoded = ""
-            if hasattr(it, "findall"):
-                for child in it:
-                    if "encoded" in getattr(child, "tag", ""):
-                        content_encoded = child.text or ""
-            desc_text = ""
-            desc_tag = it.find("description")
-            if desc_tag is not None:
-                desc_text = desc_tag.text if hasattr(desc_tag, "text") and desc_tag.text else desc_tag.get_text(strip=True)
-
-            meta_text = content_encoded or desc_text
-            options_m = re.search(r'(\d+)\s+Options', meta_text, re.I)
-            options_cnt = int(options_m.group(1)) if options_m else 0
-
-            version_m = re.search(r'Game Version:\s*([^·\n<]+)', meta_text, re.I)
-            game_ver = version_m.group(1).strip() if version_m else "v1.0+"
-
-            updated_m = re.search(r'Last Updated:\s*([^·\n<]+)', meta_text, re.I)
-            last_upd = updated_m.group(1).strip() if updated_m else ""
-
-            # Trainer cheat table / screenshot image
-            img_m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', content_encoded)
-            img_url = img_m.group(1) if img_m else None
-
-            event_key = f"{clean_link}:{options_cnt}:{game_ver}:{last_upd}"
-
-            is_new_game = clean_link not in known_trainers
-            known_info = known_trainers.get(clean_link, {})
-            old_options_cnt = known_info.get("options_count", 0)
-            old_last_upd = known_info.get("last_updated", "")
-            old_ver = known_info.get("game_version", "")
-
-            action_type = None
-            if is_new_game and event_key not in seen_keys:
-                action_type = "✨ New Trainer Release"
-            elif event_key not in seen_keys and (options_cnt != old_options_cnt or last_upd != old_last_upd or game_ver != old_ver):
-                action_type = "🔄 Trainer Updated"
-
-            if not action_type:
-                continue
-
-            known_trainers[clean_link] = {
-                "game_name": game_name,
-                "options_count": options_cnt,
-                "game_version": game_ver,
-                "last_updated": last_upd,
-                "last_notified": datetime.now(timezone.utc).isoformat()
-            }
-            seen_keys.add(event_key)
-            newly_seen_keys.append(event_key)
-
-            kl_time = parse_pubdate_to_kl(pub_date)
-            if last_upd:
-                kl_time = f"{kl_time}\n*(Updated: {last_upd})*"
-
-            new_items.append({
-                "source": "FLiNG Trainer",
-                "game_name": game_name,
-                "title": title or f"{game_name} Trainer",
-                "link": clean_link,
-                "action_type": action_type,
-                "options_count": options_cnt,
-                "game_version": game_ver,
-                "last_updated": last_upd,
-                "thumbnail": FLING_ICON,
-                "image": img_url,
-                "time_kl": kl_time
-            })
-
-        if newly_seen_keys:
-            fling_state["seen_keys"] = update_seen_list(fling_state.get("seen_keys", []), newly_seen_keys, max_len=600)
-
-        # Prune known_trainers if it exceeds 800 entries
-        if len(known_trainers) > 800:
-            keys_to_remove = list(known_trainers.keys())[:-500]
-            for k in keys_to_remove:
-                del known_trainers[k]
-
-        return list(reversed(new_items))
+                    "date_str": d_str,
+                    "thumbnail": img_url,
+                    "image": img_url
+                })
     except Exception as e:
-        logger.error(f"Error checking FLiNG Trainer feed: {e}")
+        logger.debug(f"FLiNG homepage scrape failed: {e}")
+
+    # 2. Fallback to RSS feed if homepage returned nothing
+    if not items:
+        try:
+            content = fetch_web_content(FLING_FEED_URL, timeout=12)
+            if content:
+                soup = BeautifulSoup(content, "html.parser")
+                for it in soup.find_all("item")[:20]:
+                    link = ""
+                    link_tag = it.find("link")
+                    if link_tag is not None:
+                        link = link_tag.text if hasattr(link_tag, "text") and link_tag.text else link_tag.get_text(strip=True)
+                    clean_link = link.split("?")[0].strip() if link else ""
+                    if not clean_link:
+                        continue
+                    title_tag = it.find("title")
+                    title = title_tag.text if hasattr(title_tag, "text") and title_tag.text else title_tag.get_text(strip=True)
+                    cats = [c.get_text(strip=True) for c in it.find_all("category")]
+                    game_cats = [c for c in cats if c.lower() != "trainer"]
+                    game_name = game_cats[0] if game_cats else re.sub(r'\s+Trainer.*$', '', title, flags=re.I).strip()
+
+                    content_encoded = it.find("content:encoded").get_text() if it.find("content:encoded") else ""
+                    desc_text = it.find("description").get_text() if it.find("description") else ""
+                    meta_text = content_encoded or desc_text
+
+                    options_m = re.search(r'(\d+)\s+Options', meta_text, re.I)
+                    options_cnt = int(options_m.group(1)) if options_m else 0
+
+                    version_m = re.search(r'Game Version:\s*([^·\n<]+)', meta_text, re.I)
+                    game_ver = version_m.group(1).strip() if version_m else "v1.0+"
+
+                    updated_m = re.search(r'Last Updated:\s*([0-9\.\-]+)', meta_text, re.I)
+                    last_upd = updated_m.group(1).strip() if updated_m else ""
+
+                    img_m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', content_encoded)
+                    img_url = img_m.group(1) if img_m else None
+
+                    items.append({
+                        "link": clean_link,
+                        "title": title,
+                        "game_name": game_name,
+                        "options_count": options_cnt,
+                        "game_version": game_ver,
+                        "last_updated": last_upd,
+                        "date_str": "",
+                        "thumbnail": img_url,
+                        "image": img_url
+                    })
+        except Exception as e:
+            logger.error(f"FLiNG feed fallback failed: {e}")
+
+    if not items:
         return []
+
+    # First-run initialization: populate initial games without sending historical notifications
+    if not known_trainers and not seen_keys:
+        logger.info(f"Initializing FLiNG Trainer tracker with {len(items[:30])} current games...")
+        init_keys = []
+        for it in items[:30]:
+            clean_link = it["link"]
+            options_cnt = it["options_count"]
+            game_ver = it["game_version"]
+            last_upd = it["last_updated"]
+            event_key = f"{clean_link}:{options_cnt}:{game_ver}:{last_upd}"
+            known_trainers[clean_link] = {
+                "options_count": options_cnt,
+                "game_version": game_ver,
+                "last_updated": last_upd,
+                "init_seen": True
+            }
+            init_keys.append(event_key)
+        fling_state["seen_keys"] = update_seen_list([], init_keys, max_len=600)
+        return []
+
+    new_items = []
+    newly_seen_keys = []
+
+    for it in items[:25]:
+        clean_link = it["link"]
+        title = it["title"]
+        game_name = it["game_name"]
+        options_cnt = it["options_count"]
+        game_ver = it["game_version"]
+        last_upd = it["last_updated"]
+        event_key = f"{clean_link}:{options_cnt}:{game_ver}:{last_upd}"
+
+        is_new_game = clean_link not in known_trainers
+        known_info = known_trainers.get(clean_link, {})
+        old_options_cnt = known_info.get("options_count", 0)
+        old_last_upd = known_info.get("last_updated", "")
+        old_ver = known_info.get("game_version", "")
+
+        action_type = None
+        if is_new_game and event_key not in seen_keys:
+            action_type = "✨ New Trainer Release"
+        elif event_key not in seen_keys and (options_cnt != old_options_cnt or last_upd != old_last_upd or game_ver != old_ver):
+            action_type = "🔄 Trainer Updated"
+
+        if not action_type:
+            continue
+
+        known_trainers[clean_link] = {
+            "game_name": game_name,
+            "options_count": options_cnt,
+            "game_version": game_ver,
+            "last_updated": last_upd,
+            "last_notified": datetime.now(timezone.utc).isoformat()
+        }
+        seen_keys.add(event_key)
+        newly_seen_keys.append(event_key)
+
+        now_kl = datetime.now(timezone.utc).astimezone(KL_TZ)
+        kl_time = now_kl.strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+        if it.get("date_str"):
+            kl_time = f"{it['date_str']}\n*(Detected: {kl_time})*"
+        if last_upd:
+            kl_time = f"{kl_time}\n*(Updated: {last_upd})*"
+
+        new_items.append({
+            "source": "FLiNG Trainer",
+            "game_name": game_name,
+            "title": title or f"{game_name} Trainer",
+            "link": clean_link,
+            "action_type": action_type,
+            "options_count": options_cnt,
+            "game_version": game_ver,
+            "last_updated": last_upd,
+            "thumbnail": it.get("thumbnail") or FLING_ICON,
+            "image": it.get("image"),
+            "time_kl": kl_time
+        })
+
+    if newly_seen_keys:
+        fling_state["seen_keys"] = update_seen_list(fling_state.get("seen_keys", []), newly_seen_keys, max_len=600)
+
+    # Prune known_trainers if it exceeds 800 entries
+    if len(known_trainers) > 800:
+        keys_to_remove = list(known_trainers.keys())[:-500]
+        for k in keys_to_remove:
+            del known_trainers[k]
+
+    return list(reversed(new_items))
 
 
 def create_fling_embed(item: Dict[str, Any]):
@@ -1948,26 +1973,184 @@ def create_steam_deal_embed(item: Dict[str, Any]):
 
 def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
     """
-    Checks for 100% Free Steam Games (Free to Keep, Normally Paid):
-    1. Direct Steam Store search specials with maxprice=free and specials=1 (100% discount promotions).
-    2. Reddit r/FreeGamesOnSteam RSS feed for community-reported giveaways and free claims.
+    Monitors 100% Free Games & Giveaways across Steam, Epic Games Store, and GOG.com.
+    Formatted in a sleek FreeStuff-style aesthetic with Malaysian Ringgit (MYR) pricing.
     Deduplicates strictly using seen keys stored in state['steam_free_games'].
     """
     free_state = state.setdefault("steam_free_games", {})
     seen_keys = set(str(x) for x in free_state.get("seen_keys", []))
 
-    new_items = []
-    newly_seen_keys = []
+    new_items: List[Dict[str, Any]] = []
+    newly_seen_keys: List[str] = []
 
-    # 1. Check Steam Official 100% Off Specials (Free to Keep)
-    steam_search_url = "https://store.steampowered.com/search/results/?query=&start=0&count=50&maxprice=free&specials=1&cc=my&l=en&infinite=1"
-    headers = {
-        "User-Agent": STANDARD_HEADERS["User-Agent"],
-        "Accept": "application/json"
-    }
-
+    # ---------------------------------------------------------
+    # 1. Epic Games Store Free Games (Weekly 100% Free Promotions)
+    # ---------------------------------------------------------
+    epic_api_url = "https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=MY&allowCountries=MY"
     try:
-        res = requests.get(steam_search_url, headers=headers, timeout=12)
+        req = urllib.request.Request(epic_api_url, headers={"User-Agent": STANDARD_HEADERS["User-Agent"]})
+        with urllib.request.urlopen(req, timeout=12) as r:
+            epic_data = json.loads(r.read())
+            elements = epic_data.get("data", {}).get("Catalog", {}).get("searchStore", {}).get("elements", [])
+            for el in elements:
+                title = el.get("title")
+                promos = el.get("promotions") or {}
+                offers = promos.get("promotionalOffers", [])
+                is_free_now = False
+                end_date_iso = ""
+                if offers:
+                    for po in offers:
+                        for off in po.get("promotionalOffers", []):
+                            if off.get("discountSetting", {}).get("discountPercentage") == 0:
+                                is_free_now = True
+                                end_date_iso = off.get("endDate")
+                                break
+                if not is_free_now or not title:
+                    continue
+
+                item_id = el.get("id") or title.lower()
+                dedup_key = f"epic_{item_id}"
+                if dedup_key in seen_keys:
+                    continue
+
+                until_str = "Limited Time"
+                if end_date_iso:
+                    try:
+                        dt = datetime.fromisoformat(end_date_iso.replace("Z", "+00:00")).astimezone(KL_TZ)
+                        until_str = dt.strftime("%d/%m/%Y, %I:%M %p GMT+8")
+                    except Exception:
+                        until_str = end_date_iso[:10]
+
+                cents = el.get("price", {}).get("totalPrice", {}).get("originalPrice", 0)
+                orig_price_str = f"RM {cents / 100:.2f}" if cents > 0 else "Free Giveaway"
+
+                slug = el.get("productSlug") or el.get("urlSlug")
+                if not slug:
+                    for page in el.get("catalogNs", {}).get("mappings", []):
+                        if page.get("pageSlug"):
+                            slug = page.get("pageSlug")
+                            break
+                if not slug and el.get("offerMappings"):
+                    slug = el["offerMappings"][0].get("pageSlug")
+                store_url = f"https://store.epicgames.com/en-US/p/{slug}" if slug else "https://store.epicgames.com/en-US/free-games"
+
+                # Header image
+                key_images = el.get("keyImages", [])
+                header_img = None
+                for img_type in ["OfferImageWide", "DieselStoreFrontWide", "Thumbnail"]:
+                    for img in key_images:
+                        if img.get("type") == img_type and img.get("url"):
+                            header_img = img.get("url")
+                            break
+                    if header_img:
+                        break
+                if not header_img and key_images:
+                    header_img = key_images[0].get("url")
+
+                seller_name = el.get("seller", {}).get("name") or "Epic Games"
+                for custom_attr in el.get("customAttributes", []):
+                    if custom_attr.get("key") in ("developerName", "publisherName") and custom_attr.get("value"):
+                        seller_name = custom_attr.get("value")
+                        break
+
+                item_obj = {
+                    "platform": "Epic Games",
+                    "title": title,
+                    "store_url": store_url,
+                    "original_price": orig_price_str,
+                    "until_date": until_str,
+                    "header_image": header_img,
+                    "publisher": seller_name,
+                    "badge_icon": EPIC_BADGE_ICON,
+                    "color": COLOR_EPIC,
+                    "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+                }
+                new_items.append(item_obj)
+                seen_keys.add(dedup_key)
+                newly_seen_keys.append(dedup_key)
+    except Exception as e:
+        logger.error(f"Error checking Epic Games Store free promotions: {e}")
+
+    # ---------------------------------------------------------
+    # 2. GOG.com Free Giveaways (via r/FreeGameFindings + GOG Catalog)
+    # ---------------------------------------------------------
+    try:
+        gog_rss_url = "https://www.reddit.com/r/FreeGameFindings/search.rss?q=GOG+(Game)&restrict_sr=on&sort=new"
+        xml_data = fetch_reddit_feed(gog_rss_url)
+        if xml_data:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(xml_data, "html.parser")
+            for entry in soup.find_all("entry")[:8]:
+                title_tag = entry.find("title")
+                content_tag = entry.find("content")
+                if not title_tag:
+                    continue
+                raw_title = title_tag.get_text(strip=True)
+                if "[gog]" not in raw_title.lower() or "(game)" not in raw_title.lower():
+                    continue
+
+                clean_title = re.sub(r'\[.*?\]|\(.*?\)', '', raw_title).strip()
+                dedup_key = f"gog_{clean_title.lower()}"
+                if dedup_key in seen_keys:
+                    continue
+
+                content_html = content_tag.get_text() if content_tag else ""
+                gog_m = re.search(r'https?://(?:www\.)?gog\.com/(?:[a-zA-Z]{2}/)?(?:game/|giveaway/)?[^\s"\'<>]+', content_html)
+                store_url = gog_m.group(0) if gog_m else "https://www.gog.com/"
+
+                # Query GOG catalog API for exact pricing, publisher, and high-res cover banner
+                header_img = None
+                orig_price_str = "Free Giveaway"
+                publisher_name = "GOG.com"
+
+                try:
+                    cat_term = urllib.parse.quote(clean_title)
+                    cat_url = f"https://catalog.gog.com/v1/catalog?query=like:{cat_term}&limit=1"
+                    req_cat = urllib.request.Request(cat_url, headers={"User-Agent": STANDARD_HEADERS["User-Agent"]})
+                    with urllib.request.urlopen(req_cat, timeout=8) as cat_r:
+                        cat_res = json.loads(cat_r.read())
+                        prods = cat_res.get("products", [])
+                        if prods:
+                            p = prods[0]
+                            header_img = p.get("coverHorizontal")
+                            if p.get("publishers"):
+                                publisher_name = p["publishers"][0]
+                            base_usd = p.get("price", {}).get("baseMoney", {}).get("amount")
+                            if base_usd:
+                                orig_price_str = f"RM {float(base_usd) * 4.40:.2f}"
+                            if p.get("slug"):
+                                store_url = f"https://www.gog.com/en/game/{p['slug']}"
+                except Exception as cat_e:
+                    logger.debug(f"GOG Catalog enrichment error for {clean_title}: {cat_e}")
+
+                if not header_img:
+                    img_m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', content_html)
+                    header_img = img_m.group(1) if img_m else None
+
+                item_obj = {
+                    "platform": "GOG",
+                    "title": clean_title,
+                    "store_url": store_url,
+                    "original_price": orig_price_str,
+                    "until_date": "Limited Time Giveaway",
+                    "header_image": header_img,
+                    "publisher": publisher_name,
+                    "badge_icon": GOG_BADGE_ICON,
+                    "color": COLOR_GOG,
+                    "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+                }
+                new_items.append(item_obj)
+                seen_keys.add(dedup_key)
+                newly_seen_keys.append(dedup_key)
+    except Exception as e:
+        logger.error(f"Error checking GOG free promotions: {e}")
+
+    # ---------------------------------------------------------
+    # 3. Steam Store 100% Off Specials (Free to Keep Forever)
+    # ---------------------------------------------------------
+    steam_search_url = "https://store.steampowered.com/search/results/?query=&start=0&count=50&maxprice=free&specials=1&cc=my&l=en&infinite=1"
+    try:
+        res = requests.get(steam_search_url, headers={"User-Agent": STANDARD_HEADERS["User-Agent"]}, timeout=12)
         if res.status_code == 200:
             data = res.json()
             html_text = data.get("results_html", "")
@@ -1984,12 +2167,8 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
 
                     title_el = row.select_one(".title")
                     title = title_el.text.strip() if title_el else ""
-                    disc_el = row.select_one(".discount_pct")
-                    disc = disc_el.text.strip() if disc_el else ""
                     orig_el = row.select_one(".discount_original_price")
                     orig = orig_el.text.strip() if orig_el else "Free Promotion"
-                    final_el = row.select_one(".discount_final_price")
-                    final = final_el.text.strip() if final_el else "FREE"
                     raw_link = row.get("href", "")
                     clean_link = raw_link.split("?")[0] if raw_link else f"https://store.steampowered.com/app/{app_id}/"
 
@@ -2000,35 +2179,47 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
                     if deal_key in seen_keys:
                         continue
 
-                    # Header image
                     header_img = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app_id}/header.jpg" if not str(app_id).startswith("sub_") else None
-                    if not header_img:
-                        img_el = row.select_one(".search_capsule img")
-                        header_img = img_el.get("src") if img_el else None
+                    publisher_name = "Steam"
+
+                    # Enrich with Steam Appdetails for publisher and high-res header
+                    if not str(app_id).startswith("sub_") and app_id.isdigit():
+                        try:
+                            d_url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc=my&l=en"
+                            d_res = requests.get(d_url, headers={"User-Agent": STANDARD_HEADERS["User-Agent"]}, timeout=8)
+                            if d_res.status_code == 200:
+                                d_json = d_res.json().get(str(app_id), {}).get("data", {})
+                                if d_json.get("publishers"):
+                                    publisher_name = d_json["publishers"][0]
+                                if d_json.get("header_image"):
+                                    header_img = d_json["header_image"]
+                        except Exception:
+                            pass
 
                     item_obj = {
-                        "id": app_id,
+                        "platform": "Steam",
                         "title": title,
-                        "discount": disc or "100%",
-                        "original_price": orig,
-                        "final_price": final,
                         "store_url": clean_link,
+                        "original_price": orig,
+                        "until_date": "Limited Time Claim",
                         "header_image": header_img,
-                        "source": "Steam Store (100% Off)",
+                        "publisher": publisher_name,
+                        "badge_icon": STEAM_FREE_GAMES_ICON,
+                        "color": COLOR_STEAM_FREE,
                         "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
                     }
-
                     new_items.append(item_obj)
                     seen_keys.add(deal_key)
                     newly_seen_keys.append(deal_key)
     except Exception as e:
         logger.error(f"Error checking Steam store 100% specials: {e}")
 
-    # 2. Check Reddit r/FreeGamesOnSteam RSS Feed
-    FREEGAMES_RSS_URL = "https://www.reddit.com/r/FreeGamesOnSteam/new/.rss"
+    # ---------------------------------------------------------
+    # 4. Reddit r/FreeGamesOnSteam RSS Feed
+    # ---------------------------------------------------------
     try:
         import html
-        feed_r = fetch_reddit_feed(FREEGAMES_RSS_URL)
+        feed_r = fetch_reddit_feed("https://www.reddit.com/r/FreeGamesOnSteam/new/.rss")
         if feed_r:
             entries = re.findall(r'<entry>(.*?)</entry>', feed_r, re.DOTALL)
             for e in entries:
@@ -2039,15 +2230,12 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
 
                 title_m = re.search(r'<title>(.*?)</title>', e)
                 title = html.unescape(title_m.group(1).strip()) if title_m else ""
-
-                # Ignore non-game discussion / sticky threads
                 if not title or "discussion thread" in title.lower():
                     continue
 
                 content_m = re.search(r'<content[^>]*>(.*?)</content>', e, re.DOTALL)
                 content = html.unescape(content_m.group(1)) if content_m else ""
 
-                # Find steam store links inside content
                 steam_links = re.findall(r'https?://store\.steampowered\.com/(?:app|sub)/(\d+)/?', content)
                 app_id = steam_links[0] if steam_links else None
 
@@ -2058,21 +2246,20 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
                 link_m = re.search(r'<link\s+href="([^"]+)"', e)
                 reddit_link = link_m.group(1).strip() if link_m else ""
                 store_url = f"https://store.steampowered.com/app/{app_id}/" if app_id else reddit_link
-
                 header_img = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{app_id}/header.jpg" if app_id else None
 
                 item_obj = {
-                    "id": app_id or entry_id,
+                    "platform": "Steam",
                     "title": title,
-                    "discount": "100%",
-                    "original_price": "Free Giveaway",
-                    "final_price": "FREE (100% OFF)",
                     "store_url": store_url,
+                    "original_price": "Free Giveaway",
+                    "until_date": "Limited Time Claim",
                     "header_image": header_img,
-                    "source": "r/FreeGamesOnSteam Giveaway",
+                    "publisher": "Steam",
+                    "badge_icon": STEAM_FREE_GAMES_ICON,
+                    "color": COLOR_STEAM_FREE,
                     "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
                 }
-
                 new_items.append(item_obj)
                 seen_keys.add(dedup_key)
                 newly_seen_keys.append(dedup_key)
@@ -2081,7 +2268,7 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
 
     # First run initialization (seed seen keys so we don't spam everything on first boot)
     if "seen_keys" not in free_state and newly_seen_keys:
-        logger.info(f"Initializing Steam Free Games tracker with {len(newly_seen_keys)} existing promotions...")
+        logger.info(f"Initializing Free Games tracker across Steam, Epic & GOG with {len(newly_seen_keys)} promotions...")
         free_state["seen_keys"] = update_seen_list([], newly_seen_keys, max_len=1000)
         return []
 
@@ -2092,38 +2279,50 @@ def check_steam_free_games(state: dict) -> List[Dict[str, Any]]:
 
 
 def create_steam_free_game_embed(item: Dict[str, Any]):
-    """Builds a rich Discord Embed for 100% Free Steam Games with Aesthetic Purple branding."""
+    """
+    Builds a Discord Embed for 100% Free Games across Steam, Epic Games, and GOG.com
+    formatted in the clean FreeStuff aesthetic:
+    - Clickable game title
+    - ~~Original Price (MYR)~~ Free until DD/MM/YYYY
+    - 👉 Open in browser ↗ button link
+    - 1:1 platform badge icon in top right thumbnail
+    - Wide banner image in main body
+    - Footer with publisher copyright and GMT+8 timestamp
+    """
     import discord
-    name = item["title"]
-    store_url = item["store_url"]
-    disc = item.get("discount", "100%")
-    orig = item.get("original_price", "Paid Game")
-    final = item.get("final_price", "FREE")
+    title = item.get("title", "Free Game")
+    store_url = item.get("store_url", "https://store.steampowered.com/")
+    orig = item.get("original_price", "")
+    until = item.get("until_date", "")
+    platform = item.get("platform", "Steam")
+    badge_icon = item.get("badge_icon", STEAM_FREE_GAMES_ICON)
+    publisher = item.get("publisher") or platform
+    color = item.get("color", COLOR_STEAM_FREE)
+
+    if orig and orig.lower() not in ["free", "free giveaway", "free claim"]:
+        if until and until.lower() != "limited time":
+            price_line = f"~~{orig}~~ **Free** until {until}"
+        else:
+            price_line = f"~~{orig}~~ **Free**"
+    else:
+        if until and until.lower() != "limited time":
+            price_line = f"**100% Free** until {until}"
+        else:
+            price_line = f"**100% Free to Keep**"
+
+    description = f"{price_line}\n\n👉 **[Open in browser ↗]({store_url})**"
 
     embed = discord.Embed(
-        title=f"🎁 [100% FREE ON STEAM] {name}",
+        title=title,
         url=store_url,
-        color=COLOR_STEAM_FREE
+        description=description,
+        color=color
     )
 
     if item.get("header_image"):
         embed.set_image(url=item["header_image"])
-    embed.set_thumbnail(url=STEAM_FREE_GAMES_ICON)
-
-    embed.add_field(name="🎮 Game Title", value=f"**[{name}]({store_url})**", inline=False)
-    embed.add_field(name="🏷️ Promotion", value="**🔥 100% FREE TO KEEP**", inline=True)
-    embed.add_field(name="💵 Original Price", value=f"~~{orig}~~" if orig != "Free Giveaway" else f"*{orig}*", inline=True)
-    embed.add_field(name="💰 Promo Price", value="**`FREE / RM 0.00`**", inline=True)
-    embed.add_field(name="📡 Source", value=f"`{item.get('source', 'Steam Store')}`", inline=True)
-    embed.add_field(name="⏰ Discovered", value=f"`{item.get('time_kl', 'Now')}`", inline=True)
-
-    embed.add_field(
-        name="🛒 Steam Store Claim Link",
-        value=f"👉 **[Claim {name} for Free on Steam Store]({store_url})**",
-        inline=False
-    )
-
-    embed.set_footer(text="Steam Free Games Monitor • Free to Keep Forever • GMT+8", icon_url=STEAM_FREE_GAMES_ICON)
+    embed.set_thumbnail(url=badge_icon)
+    embed.set_footer(text=f"via Free Games Monitor • © {publisher} • GMT+8", icon_url=badge_icon)
     return embed
 
 
@@ -2448,7 +2647,7 @@ def create_steam_patch_embed(item: Dict[str, Any]):
 def check_steam_free_weekends(state: dict) -> List[Dict[str, Any]]:
     """
     Monitors Steam Free Weekend promotions:
-    1. Reddit r/FreeGameFindings & r/FreeGamesOnSteam for verified Free Weekend announcements.
+    1. Reddit r/GameDeals & r/FreeGamesOnSteam for verified Steam Free Weekend announcements.
     """
     fw_state = state.setdefault("steam_free_weekends", {})
     seen_keys = set(str(k) for k in fw_state.get("seen_keys", []))
@@ -2457,7 +2656,8 @@ def check_steam_free_weekends(state: dict) -> List[Dict[str, Any]]:
     newly_seen_keys: List[str] = []
 
     try:
-        xml_data = fetch_reddit_feed("https://www.reddit.com/r/FreeGameFindings/search.rss?q=Steam+Free+Weekend&restrict_sr=on&sort=new")
+        # r/GameDeals actively indexes all official Steam Free Weekend events
+        xml_data = fetch_reddit_feed('https://www.reddit.com/r/GameDeals/search.rss?q=%22Free+Weekend%22+Steam&restrict_sr=on&sort=new')
         if xml_data:
             soup = BeautifulSoup(xml_data, "html.parser")
             for entry in soup.find_all("entry"):
@@ -2517,14 +2717,17 @@ def check_steam_free_weekends(state: dict) -> List[Dict[str, Any]]:
 
 
 def create_steam_free_weekend_embed(item: Dict[str, Any]):
-    """Builds a rich Discord Embed for Steam Free Weekend events."""
+    """Builds a rich Discord Embed for Steam Free Weekend events formatted in the clean FreeStuff aesthetic."""
     import discord
     name = item["title"]
     store_url = item["store_url"]
 
+    description = f"🆓 **Free to Play This Weekend**\n\n👉 **[Download & Play on Steam Store ↗]({store_url})**"
+
     embed = discord.Embed(
         title=f"🎉 [STEAM FREE WEEKEND] {name}",
         url=store_url,
+        description=description,
         color=COLOR_FREE_WEEKEND
     )
 
@@ -2537,13 +2740,194 @@ def create_steam_free_weekend_embed(item: Dict[str, Any]):
     embed.add_field(name="💻 Platform", value="**`Steam (PC)`**", inline=True)
     embed.add_field(name="⏰ Discovered", value=f"`{item.get('time_kl', 'Now')}`", inline=True)
 
+    embed.set_footer(text="Steam Free Weekend Monitor • Temporary Full Game Trial • GMT+8", icon_url=STEAM_FREE_WEEKEND_ICON)
+    return embed
+
+
+# ==============================================================================
+# 12. STEAM NEW GAME & DLC LAUNCHES MONITOR
+# ==============================================================================
+
+def fetch_steam_search_releases(category_id: int = 998) -> List[Dict[str, Any]]:
+    """
+    Fetches and parses newly released items from the official Steam Store search.
+    category_id=998: Base Games
+    category_id=21:  Downloadable Content (DLC / Expansions)
+    """
+    url = f"https://store.steampowered.com/search/?sort_by=Released_DESC&category1={category_id}&cc=my&l=en"
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        }
+        r = requests.get(url, headers=headers, timeout=12)
+        if r.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(r.text, "html.parser")
+        rows = soup.find_all("a", class_=lambda c: c and "search_result_row" in c)
+        results = []
+
+        for row in rows[:35]:
+            appid = row.get("data-ds-appid")
+            if not appid or not appid.isdigit():
+                continue
+
+            title_el = row.find(class_="title")
+            title = title_el.get_text(strip=True) if title_el else f"App {appid}"
+
+            rel_el = row.find(class_="search_released")
+            rel_date = rel_el.get_text(strip=True) if rel_el else "Just Launched"
+
+            disc_el = row.find(class_="discount_pct")
+            discount_pct = disc_el.get_text(strip=True) if disc_el else ""
+
+            price_orig_el = row.find(class_="discount_original_price")
+            price_orig = price_orig_el.get_text(strip=True) if price_orig_el else ""
+
+            price_final_el = row.find(class_="discount_final_price")
+            price_final = price_final_el.get_text(strip=True) if price_final_el else ""
+            if not price_final:
+                p_div = row.find(class_="search_price")
+                price_final = p_div.get_text(strip=True) if p_div else "Free to Play"
+
+            platforms = []
+            if row.find(class_="win"):
+                platforms.append("Windows")
+            if row.find(class_="mac"):
+                platforms.append("macOS")
+            if row.find(class_="linux"):
+                platforms.append("Steam Deck / Linux")
+
+            header_img = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg"
+            store_url = f"https://store.steampowered.com/app/{appid}/"
+
+            item_type = "dlc" if category_id == 21 else "game"
+
+            results.append({
+                "item_type": item_type,
+                "appid": appid,
+                "title": title,
+                "release_date": rel_date,
+                "price": price_final,
+                "original_price": price_orig,
+                "discount": discount_pct,
+                "platforms": platforms,
+                "store_url": store_url,
+                "header_image": header_img,
+                "time_kl": datetime.now(KL_TZ).strftime("%a, %b %d, %Y %I:%M %p GMT+8")
+            })
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching Steam search releases (category={category_id}): {e}")
+        return []
+
+
+def check_steam_new_launches(state: dict, include_games: bool = True, include_dlc: bool = True) -> List[Dict[str, Any]]:
+    """
+    Monitors newly launched full games and DLC releases on the official Steam Store.
+    1. category1=998 -> Full Game Releases
+    2. category1=21  -> Downloadable Content (DLC & Expansions)
+    Uses strict FIFO seen_keys tracking with first-run initial seeding.
+    """
+    launch_state = state.setdefault("steam_new_launches", {})
+    seen_keys = set(str(x) for x in launch_state.get("seen_keys", []))
+
+    all_fetched: List[Dict[str, Any]] = []
+
+    if include_games:
+        all_fetched.extend(fetch_steam_search_releases(category_id=998))
+    if include_dlc:
+        all_fetched.extend(fetch_steam_search_releases(category_id=21))
+
+    if not all_fetched:
+        return []
+
+    # First-run initialization: populate currently live releases without notification burst
+    if "seen_keys" not in launch_state:
+        init_keys = [f"{it['item_type']}_{it['appid']}" for it in all_fetched]
+        logger.info(f"Initializing Steam New Launches Tracker with {len(init_keys)} current store releases...")
+        launch_state["seen_keys"] = update_seen_list([], init_keys, max_len=800)
+        return []
+
+    new_items = []
+    newly_seen_keys = []
+
+    for it in all_fetched:
+        dedup_key = f"{it['item_type']}_{it['appid']}"
+        if dedup_key in seen_keys:
+            continue
+
+        seen_keys.add(dedup_key)
+        newly_seen_keys.append(dedup_key)
+        new_items.append(it)
+
+    if newly_seen_keys:
+        launch_state["seen_keys"] = update_seen_list(launch_state.get("seen_keys", []), newly_seen_keys, max_len=800)
+
+    return list(reversed(new_items))
+
+
+def create_steam_new_launch_embed(item: Dict[str, Any]):
+    """Builds a rich Discord Embed for a new Steam game or DLC launch."""
+    import discord
+    is_dlc = item.get("item_type") == "dlc"
+    title = item.get("title", "New Release")
+    store_url = item.get("store_url", "https://store.steampowered.com/")
+    appid = item.get("appid", "")
+
+    if is_dlc:
+        embed_title = f"🧩 [STEAM DLC LAUNCH] {title}"
+        embed_color = COLOR_STEAM_NEW_DLC
+        type_desc = "**🧩 Downloadable Content (DLC / Expansion)**"
+        icon_url = STEAM_NEW_DLC_ICON
+    else:
+        embed_title = f"🚀 [STEAM GAME LAUNCH] {title}"
+        embed_color = COLOR_STEAM_NEW_LAUNCH
+        type_desc = "**🎮 Full Game Release**"
+        icon_url = STEAM_NEW_LAUNCH_ICON
+
+    if len(embed_title) > 250:
+        embed_title = embed_title[:247] + "..."
+
+    embed = discord.Embed(
+        title=embed_title,
+        url=store_url,
+        color=embed_color
+    )
+
+    if item.get("header_image"):
+        embed.set_image(url=item["header_image"])
+    embed.set_thumbnail(url=icon_url)
+
+    embed.add_field(name="🎮 Title", value=f"**[{title}]({store_url})**", inline=False)
+    embed.add_field(name="🏷️ Release Type", value=type_desc, inline=True)
+
+    # Price display with launch promo discount if applicable
+    price_val = item.get("price", "Free to Play")
+    orig_val = item.get("original_price")
+    disc_val = item.get("discount")
+    if orig_val and disc_val:
+        price_str = f"**`{price_val}`** *(~~{orig_val}~~ {disc_val})*"
+    else:
+        price_str = f"**`{price_val}`**"
+    embed.add_field(name="💰 Launch Price (MYR)", value=price_str, inline=True)
+
+    platforms = item.get("platforms") or ["PC (Windows)"]
+    embed.add_field(name="💻 Platforms", value=f"`{', '.join(platforms)}`", inline=True)
+
+    embed.add_field(name="🆔 AppID", value=f"`{appid}`", inline=True)
+    embed.add_field(name="📅 Release Date", value=f"`{item.get('release_date', 'Today')}`", inline=True)
+    embed.add_field(name="🕒 Discovered", value=f"`{item.get('time_kl', 'Now')}`", inline=True)
+
     embed.add_field(
-        name="🚀 Play Now on Steam",
-        value=f"👉 **[Download & Play {name} on Steam]({store_url})**",
+        name="🚀 View on Steam",
+        value=f"👉 **[Open {title} on Steam Store]({store_url})**",
         inline=False
     )
 
-    embed.set_footer(text="Steam Free Weekend Monitor • Temporary Full Game Trial • GMT+8", icon_url=STEAM_FREE_WEEKEND_ICON)
+    footer_text = "Steam DLC Launches Monitor • Official Steam Store • GMT+8" if is_dlc else "Steam Game Launches Monitor • Official Steam Store • GMT+8"
+    embed.set_footer(text=footer_text, icon_url=icon_url)
     return embed
+
 
 

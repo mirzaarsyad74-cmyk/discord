@@ -170,7 +170,7 @@ class CsRinScraper:
         """
         import xml.etree.ElementTree as ET
         f_id = self.extract_forum_id(forum_id)
-        url = f"{FORUM_URL}/feed.php?f={f_id}"
+        url = f"{FORUM_URL}/feed.php?f={f_id}" if f_id and f_id.isdigit() else f"{FORUM_URL}/feed.php"
         xml_data = self.fetch_html(url)
         if not xml_data:
             return []
@@ -476,6 +476,9 @@ class CsRinScraper:
         text = root.get_text()
         # Clean up forum "Please login to see this link" placeholders
         text = re.sub(r'\[\[Please login to see this link\.\]\]', '*(link)*', text)
+        # Strip phpBB Atom feed footer statistics
+        text = re.sub(r'(?i)Statistics:\s*Posted\s*by\s*\[.*?\]\(.*?\)\s*(?:—|–|-)\s*.*$', '', text)
+        text = re.sub(r'(?i)Statistics:\s*Posted\s*by\s*.*$', '', text)
         # Clean multiple spaces and blank lines
         text = re.sub(r'[ \t]+', ' ', text)
         text = re.sub(r'\n{3,}', '\n\n', text)

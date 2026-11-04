@@ -58,6 +58,8 @@ def load_config() -> dict:
         "watch_denuvo_status": True,
         "watch_steam_app_patches": True,
         "watch_steam_free_weekends": True,
+        "watch_steam_new_launches": True,
+        "watch_steam_dlc_launches": True,
         "watch_fitgirl": False,
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
@@ -211,6 +213,8 @@ def create_startup_test_embed():
     embed.add_field(name="🛡️ Denuvo Tracker", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="📦 Steam App Patches", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="🎉 Steam Free Weekends", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🚀 Steam Game Launches", value="`✅ Scanning every 60s`", inline=True)
+    embed.add_field(name="🧩 Steam DLC Launches", value="`✅ Scanning every 60s`", inline=True)
     embed.add_field(name="⚡ 24/7 Keep-Alive", value="`✅ Armed & Running`", inline=True)
     embed.set_footer(text="Game Release Monitor • Live Startup Test • GMT+8")
     return embed
@@ -319,6 +323,19 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking Steam Free Weekends: {e}")
 
+    # Check Steam New Game & DLC Launches
+    if config.get("watch_steam_new_launches", True) or config.get("watch_steam_dlc_launches", True):
+        try:
+            from external_monitors import create_steam_new_launch_embed
+            inc_games = config.get("watch_steam_new_launches", True)
+            inc_dlc = config.get("watch_steam_dlc_launches", True)
+            logger.info("Checking Steam New Game & DLC Launches...")
+            launch_updates = await asyncio.to_thread(monitor.check_steam_new_launches, include_games=inc_games, include_dlc=inc_dlc)
+            for upd in launch_updates:
+                await channel.send(embed=create_steam_new_launch_embed(upd))
+        except Exception as e:
+            logger.error(f"Error checking Steam new launches: {e}")
+
 
     # Check monitored game topics (CS.RIN.RU)
     if config.get("watch_csrin", False):
@@ -350,9 +367,6 @@ async def bot_monitor_task():
                 try:
                     feed_posts = await asyncio.to_thread(monitor.check_live_feed, fid)
                     for post in feed_posts:
-                        if monitor.is_post_seen(post.topic_id, post):
-                            continue
-
                         is_rel, release_label = classify_release(post, cracks_only=cracks_only)
                         if not is_rel:
                             monitor.mark_post_seen(post.topic_id, post)
@@ -494,6 +508,10 @@ async def on_ready():
         active_monitors.append("Steam App Patches")
     if config.get("watch_steam_free_weekends", True):
         active_monitors.append("Steam Free Weekends")
+    if config.get("watch_steam_new_launches", True):
+        active_monitors.append("Steam New Game Launches")
+    if config.get("watch_steam_dlc_launches", True):
+        active_monitors.append("Steam DLC Launches")
     if config.get("watch_csrin", False):
         active_monitors.append(f"CS.RIN.RU ({len(config.get('topics', []))} topics)")
 
@@ -591,6 +609,14 @@ async def cmd_check(ctx: commands.Context):
         for upd in await asyncio.to_thread(monitor.check_steam_free_weekends):
             total_new += 1
             await ctx.send(embed=create_steam_free_weekend_embed(upd))
+
+    if config.get("watch_steam_new_launches", True) or config.get("watch_steam_dlc_launches", True):
+        from external_monitors import create_steam_new_launch_embed
+        inc_games = config.get("watch_steam_new_launches", True)
+        inc_dlc = config.get("watch_steam_dlc_launches", True)
+        for upd in await asyncio.to_thread(monitor.check_steam_new_launches, include_games=inc_games, include_dlc=inc_dlc):
+            total_new += 1
+            await ctx.send(embed=create_steam_new_launch_embed(upd))
 
     if config.get("watch_csrin", False):
         topics = config.get("topics", [])
@@ -698,6 +724,8 @@ async def cmd_status(ctx: commands.Context):
     embed.add_field(name="Denuvo Tracker", value="**✅ ACTIVE**" if config.get("watch_denuvo_status", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Steam App Patches", value="**✅ ACTIVE**" if config.get("watch_steam_app_patches", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Steam Free Weekends", value="**✅ ACTIVE**" if config.get("watch_steam_free_weekends", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Steam Game Launches", value="**✅ ACTIVE**" if config.get("watch_steam_new_launches", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Steam DLC Launches", value="**✅ ACTIVE**" if config.get("watch_steam_dlc_launches", True) else "❌ Disabled", inline=True)
     embed.add_field(name="CS.RIN.RU", value="❌ **REMOVED**" if not config.get("watch_csrin", False) else f"✅ Active ({len(config.get('topics', []))} topics)", inline=True)
     embed.add_field(name="Check Interval", value=f"`{CHECK_INTERVAL}` seconds", inline=True)
     embed.set_footer(text=f"Serving channel: #{ctx.channel.name}")
@@ -860,6 +888,18 @@ async def run_webhook_daemon(webhook_url: str):
                     safe_webhook_send(webhook, create_steam_free_weekend_embed(upd), username="Steam Free Weekend")
                     logger.info(f"Posted Steam Free Weekend: {upd.get('title')}")
 
+            # Check Steam New Game & DLC Launches
+            if current_cfg.get("watch_steam_new_launches", True) or current_cfg.get("watch_steam_dlc_launches", True):
+                from external_monitors import create_steam_new_launch_embed
+                inc_games = current_cfg.get("watch_steam_new_launches", True)
+                inc_dlc = current_cfg.get("watch_steam_dlc_launches", True)
+                logger.info("Checking Steam New Game & DLC Launches...")
+                launch_updates = await asyncio.to_thread(monitor.check_steam_new_launches, include_games=inc_games, include_dlc=inc_dlc)
+                for upd in launch_updates:
+                    u_name = "Steam DLC Launches" if upd.get("item_type") == "dlc" else "Steam Game Launches"
+                    safe_webhook_send(webhook, create_steam_new_launch_embed(upd), username=u_name)
+                    logger.info(f"Posted Steam Launch [{upd.get('item_type')}]: {upd.get('title')}")
+
 
             if current_cfg.get("watch_csrin", False):
                 for topic_raw in active_topics:
@@ -883,9 +923,6 @@ async def run_webhook_daemon(webhook_url: str):
                         logger.info(f"Checking CS.RIN.RU Global Live Feed (f={fid})...")
                         feed_posts = await asyncio.to_thread(monitor.check_live_feed, fid)
                         for post in feed_posts:
-                            if monitor.is_post_seen(post.topic_id, post):
-                                continue
-
                             is_rel, release_label = classify_release(post, cracks_only=cracks_only)
                             if not is_rel:
                                 monitor.mark_post_seen(post.topic_id, post)
@@ -1082,6 +1119,8 @@ def start_health_server():
                     ("Denuvo Tracker", config.get("watch_denuvo_status", True)),
                     ("Steam App Patches", config.get("watch_steam_app_patches", True)),
                     ("Steam Free Weekends", config.get("watch_steam_free_weekends", True)),
+                    ("Steam New Game Launches", config.get("watch_steam_new_launches", True)),
+                    ("Steam DLC Launches", config.get("watch_steam_dlc_launches", True)),
                 ] if enabled
             ]
             resp = json.dumps({
