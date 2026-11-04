@@ -463,37 +463,6 @@
   },
   "feed": {
     "seen_post_ids": [
-      "3619380",
-      "3619381",
-      "3619382",
-      "3619384",
-      "3619383",
-      "3619385",
-      "3619388",
-      "3619386",
-      "3565708",
-      "3619389",
-      "3619391",
-      "3619390",
-      "3619393",
-      "3619394",
-      "3619395",
-      "3619397",
-      "3619398",
-      "3619402",
-      "3619403",
-      "3619404",
-      "3619406",
-      "3489121",
-      "3619405",
-      "3619408",
-      "3619409",
-      "3619410",
-      "3619412",
-      "3619411",
-      "3619415",
-      "3619416",
-      "3619418",
       "3619423",
       "3619422",
       "3619421",
@@ -1462,40 +1431,40 @@
       "3620569",
       "3620574",
       "3620576",
-      "3620577"
+      "3620577",
+      "3620579",
+      "3620581",
+      "3620582",
+      "3620580",
+      "3620584",
+      "3620585",
+      "3620586",
+      "3620589",
+      "3620588",
+      "3620587",
+      "3620591",
+      "3620594",
+      "3620595",
+      "3620596",
+      "3620600",
+      "3620599",
+      "3620598",
+      "3620597",
+      "3620601",
+      "3620606",
+      "3620605",
+      "3620603",
+      "3620602",
+      "3620607",
+      "3620610",
+      "3620609",
+      "3620616",
+      "3620615",
+      "3620612",
+      "3620617",
+      "3620620"
     ],
     "seen_fingerprints": [
-      "eddc6a03dc8c8e30966b552606039d27a90193f1243196eb46050b956b6efe6e",
-      "b2c92aa1c2aeaa7cdc1bffb529b788d6ea68001a2dbe549dcf508bcf64cec820",
-      "3dbcd290fd914620529eca838cd8678aeff72783d4ff32f93e372129e407f900",
-      "728a73a034d61a8aec71261c0ee76cd577cd5f3f8c55178852ecda8fa57f7364",
-      "fff9d4e68f9902463e6f708ba26f71da288531cc56edc28a4d8e692572c2897f",
-      "90e58431d0865dc530eba77fd56d5dab4801811725e496e6d2c943cff2783bfd",
-      "ecb7c345e945fcf319a039ab6e99d9ea14f3828da79b74827d7fb7bda63c522e",
-      "0e63119fc2711ce6b4168298c45fbfb896fd6d680e3ab0b1d6eeaa7ff5be037f",
-      "a1b2192b4b5c49f89ebc3960748563e67d8a9b49403beadbb3ca1c9242818f29",
-      "06e66c1d9e906da2ac5b90ec4bb5c25b275c4c1b775a3913d28a4e47be3da6dd",
-      "6b564ca6ad1468df5f3577348992a754cee2ab4caf6a5b2ebbc35821213ac7a9",
-      "d8a40ecaf72d2f3e411624270667cb313a477a234af7257b56edec8200e24a1b",
-      "3381abf285492fdccb1434706063da05356f4f726bfa5bf013c65733590005f5",
-      "6c1e91f78ad71fdd192c4180adf8ce5aad12dcadc9fd0827224c6fdb41d4042f",
-      "fc775ec2139f33baee0cf933385c637de13442add6b9b8e343e0f2fa734ae4e4",
-      "85e8bf31691bbb6ef281d9c407a502b8d9dc5b2ef99ee99c943bba13be84f5e5",
-      "8bf00b7a73a860ef418dc5403c76e3064f0d996e8e2cd92584ea9a01d6d8163e",
-      "76f4f4d41fe1754a35dc007793f646283682c076d039e863ed9249cb915d2afe",
-      "cf325b9fe0ff43ace15eace274c2139f7b77664d9f3be198df7bc98c388a778b",
-      "95844428c6ad3590bf06d424ec0ed3d367cfd415e8f9a9fa7649df3795b42e67",
-      "96dec21a20b8887ebb7e1c30519ef76c4ae751727519b68b723935020fdb2047",
-      "09c6ef145a7da41efcdc7dc47858d2e02e184e038619bd5d64b300d05b41024c",
-      "feb3cf496e040dad373877415791fdffc2376a7456977434e966e2d2a2cb3a30",
-      "0220c61471c0a3ee919f29c8d89909385fca33b82323283b008669f4eb377fbf",
-      "320478c83ba06777c21815ccd06839b5cc20e457c3510d4e8c6c0a00afa44248",
-      "cfcdd2c19b8084e3238970dd4c48b9dd2e739141802d3910de139360477f38c8",
-      "0b6d124892d36a8dd61276ae2e963b7ef80772acb384c761722555353a791824",
-      "6c025b54a8e1b17491d9da0678cd5c7de96bea3f8cc5cf9ea108aade3221c0c3",
-      "4b30e501db45c8d6fef8b6943d5127258d8add0a00b079b032d99fa5e431e0f3",
-      "d08d0a2fab1cfaa924c9ddf68cc0b82ea97dbf481344c1bbb9225969eef8d4dc",
-      "7fd3e750afce93051060c330204c0b724fb0699a17ffff33bce8755419110371",
       "01e56a7084820bf547d208f2872b19c141284dab1ef39e12cc8d0af1c0c1ab32",
       "d51ecc1b56a0606e09e6419aecdb79b09d6e607a8ecfa0d96d985b0cc20fb6cc",
       "5fe037f9a8b460e4af2e0201fbfba53a5b27e3a9357f56b2a98aa583bb33099d",
@@ -2064,7 +2033,38 @@
       "27cfcc6833457474262bcd148c9df828ad61717f25de5701048c3053c207fba8",
       "2d274ae6b59707c0072c6199ce082e8dc479ac2e01f999c55b03f22bd49fc128",
       "3c4f7b9b62c54ca6ac7cbeb0f8d650b1b8e33cbe532a6e71a3279b4fb9ac9eb8",
-      "154a1d2ea77c2e9251a6dea005048fded076ef0e7ee03d49795e8aa243e595ab"
+      "154a1d2ea77c2e9251a6dea005048fded076ef0e7ee03d49795e8aa243e595ab",
+      "920649b287cd20c92e9309c84799b75aef6385c52086f392ec4d63e904fe954c",
+      "de91527b4025156362cbb74971b5e63f7961025ff73b624449a388a65cca346d",
+      "5691e16fbafc105b421ab42c4329ea6f9a344b42691c47dfd01851636445224e",
+      "734bbcc7c4ec50a7acf02615d6802d0b2d43d99ead4306f24447acd1f6ba329e",
+      "5640409288f750efaebc420e6aaeb948ee5c8314055de5a20a2c3e0931aababa",
+      "b16e3636d9876a3bcf22e291ff392a3bdf21269c110ed5bc2c117afb5e3881bf",
+      "84b1687bfff5d0dca4ec3cd4dd2849c7741b5a9a7414125e49f66131a018bac8",
+      "b6e9d79c8eba1c6c113e268173d9989351b3318219e57a4b7b09869b8a156f8e",
+      "1dd3a155fa33c9a1d625e5bfe86ee78096a1a1f8d209a9bff011278f78507d98",
+      "53f93e11e16ebb0e5afe0261e6260895269f2b46313d9da51caa314f13896f28",
+      "2cd8300da042f078fad92e63b55c43575debf137612a2d72fb662dcb56a6b3b2",
+      "407115afc0f4b5c216e1db153bed2670dee03bee99b00c2c8d21104bc53d6a5e",
+      "909b01233e39cfc3c840189df2290e26aa67392f088c06f81a49a5c8c233b9db",
+      "d97f02318da39930848962a4c0f7dbeac65887d6ba4c3202f49b744eb7ab121d",
+      "397e2b2ec3244608c0eba11314df7a34b74ee92e1957645f1deda695f969aff9",
+      "8f8ea845321369ae7ca2318467b76939a76b324b62c67653881c154d460166b7",
+      "818282d5440de5bf41800b8e0da378696f90642d1c8737ae185d84cae495012d",
+      "902fa5053c81b6687a74eb74d0b70ab90ca9d1fb03bb9ff93be0aec62c056b4c",
+      "d29e3d5f0d1fbaae15f2249dd4db2bc8a9d02411a783f2014da5a29ca24e8316",
+      "a3a430bd67f2f1e0d3be53e9db386d9c8fbc5367f8767ba97acb150f831299d9",
+      "27e4ef9019c91d571e12f8d0d86c0d56f55307cf979519f25d29b0e55a8ea3c1",
+      "73c142ecd435db8a572e8df77dab80e7d30f4b5a080d1da2ef278325047e4f9e",
+      "53e79cb88f570d5e6c59aa275f79c63742085f994a47523efd06423fc165a9a1",
+      "af1eca6dd826342cb4fec8be3e36d5fd54a8703e669284273cf57adaedadb139",
+      "a575b1f07ea18bf81b1a94f2f267d80a263b22c778d008405506fa89228541ef",
+      "d364f44e3c5a8981769d27f57da7ccc47125be89bfe5dfdc4a6efaa8e01c29c3",
+      "a40bbcfe0064a805f8b44ae72b5027d8356cf905d6f72888f47964ac23eeeeba",
+      "7522e9ee17242ff0bfbda0f7ffde1519fc1d253dcc91b864dccf98343f2d47ce",
+      "bde86fe7c9dfa43365163c370df46eeb3cc3438ee15c40472b7188e7494fd82b",
+      "aafa02968e0f88ba2485a83b5e5272f68d3ae7857212872ed911f033e0b43009",
+      "20fbf597ed9e21619316cda77e58e26424be372e156b724f78d037d53986093b"
     ]
   },
   "wemod": {
@@ -2271,7 +2271,11 @@
       "/cheats/frozen-ship-trainers:37:",
       "/cheats/frozen-ship-trainers:37:2135930",
       "/cheats/battleplan-trainers:19:",
-      "/cheats/battleplan-trainers:19:2136024"
+      "/cheats/battleplan-trainers:19:2136024",
+      "/cheats/the-wolf-among-us-remastered-trainers:3:",
+      "/cheats/thank-you-for-your-application-trainers:8:1903577",
+      "/cheats/thank-you-for-your-application-trainers:8:2136554",
+      "/cheats/the-wolf-among-us-remastered-trainers:3:2136564"
     ],
     "known_trainers": {
       "/cheats/gtfo-trainers": {
@@ -2959,6 +2963,13 @@
         "updated_text": "1 hour ago",
         "last_notified": "2026-10-27T23:44:44.111834+00:00"
       },
+      "/cheats/the-wolf-among-us-remastered-trainers": {
+        "name": "The Wolf Among Us Remastered",
+        "build_id": "2136564",
+        "cheats_count": 3,
+        "updated_text": "1 hour ago",
+        "last_notified": "2026-11-04T11:54:48.642368+00:00"
+      },
       "/cheats/warhammer-40000-battlesector-trainers": {
         "name": "Warhammer 40,000: Battlesector",
         "build_id": "2134889",
@@ -3005,6 +3016,13 @@
         "cheats_count": 20,
         "updated_text": "21 mins ago",
         "last_notified": "2026-10-28T18:59:45.219474+00:00"
+      },
+      "/cheats/thank-you-for-your-application-trainers": {
+        "name": "Thank You For Your Application",
+        "build_id": "2136554",
+        "cheats_count": 8,
+        "updated_text": "1 hour ago",
+        "last_notified": "2026-11-04T11:49:19.406934+00:00"
       },
       "/cheats/warrior-cats-clans-of-the-forest-trainers": {
         "name": "Warrior Cats: Clans of the Forest",
@@ -3093,7 +3111,247 @@
       }
     }
   },
-  "topics": {},
+  "topics": {
+    "64041": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620595"
+      ],
+      "seen_fingerprints": [
+        "909b01233e39cfc3c840189df2290e26aa67392f088c06f81a49a5c8c233b9db"
+      ]
+    },
+    "80478": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620598"
+      ],
+      "seen_fingerprints": [
+        "818282d5440de5bf41800b8e0da378696f90642d1c8737ae185d84cae495012d"
+      ]
+    },
+    "94040": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620594"
+      ],
+      "seen_fingerprints": [
+        "407115afc0f4b5c216e1db153bed2670dee03bee99b00c2c8d21104bc53d6a5e"
+      ]
+    },
+    "95847": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620607"
+      ],
+      "seen_fingerprints": [
+        "af1eca6dd826342cb4fec8be3e36d5fd54a8703e669284273cf57adaedadb139"
+      ]
+    },
+    "99378": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620605"
+      ],
+      "seen_fingerprints": [
+        "27e4ef9019c91d571e12f8d0d86c0d56f55307cf979519f25d29b0e55a8ea3c1"
+      ]
+    },
+    "105454": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620586",
+        "3620587",
+        "3620599",
+        "3620610"
+      ],
+      "seen_fingerprints": [
+        "84b1687bfff5d0dca4ec3cd4dd2849c7741b5a9a7414125e49f66131a018bac8",
+        "53f93e11e16ebb0e5afe0261e6260895269f2b46313d9da51caa314f13896f28",
+        "8f8ea845321369ae7ca2318467b76939a76b324b62c67653881c154d460166b7",
+        "a575b1f07ea18bf81b1a94f2f267d80a263b22c778d008405506fa89228541ef"
+      ]
+    },
+    "117182": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620600"
+      ],
+      "seen_fingerprints": [
+        "397e2b2ec3244608c0eba11314df7a34b74ee92e1957645f1deda695f969aff9"
+      ]
+    },
+    "121700": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620615"
+      ],
+      "seen_fingerprints": [
+        "7522e9ee17242ff0bfbda0f7ffde1519fc1d253dcc91b864dccf98343f2d47ce"
+      ]
+    },
+    "123813": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620591"
+      ],
+      "seen_fingerprints": [
+        "2cd8300da042f078fad92e63b55c43575debf137612a2d72fb662dcb56a6b3b2"
+      ]
+    },
+    "126489": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620589"
+      ],
+      "seen_fingerprints": [
+        "b6e9d79c8eba1c6c113e268173d9989351b3318219e57a4b7b09869b8a156f8e"
+      ]
+    },
+    "141336": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620609"
+      ],
+      "seen_fingerprints": [
+        "d364f44e3c5a8981769d27f57da7ccc47125be89bfe5dfdc4a6efaa8e01c29c3"
+      ]
+    },
+    "144800": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620606"
+      ],
+      "seen_fingerprints": [
+        "a3a430bd67f2f1e0d3be53e9db386d9c8fbc5367f8767ba97acb150f831299d9"
+      ]
+    },
+    "150434": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620612"
+      ],
+      "seen_fingerprints": [
+        "bde86fe7c9dfa43365163c370df46eeb3cc3438ee15c40472b7188e7494fd82b"
+      ]
+    },
+    "155273": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620616"
+      ],
+      "seen_fingerprints": [
+        "a40bbcfe0064a805f8b44ae72b5027d8356cf905d6f72888f47964ac23eeeeba"
+      ]
+    },
+    "155287": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620597"
+      ],
+      "seen_fingerprints": [
+        "902fa5053c81b6687a74eb74d0b70ab90ca9d1fb03bb9ff93be0aec62c056b4c"
+      ]
+    },
+    "160102": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620601"
+      ],
+      "seen_fingerprints": [
+        "d29e3d5f0d1fbaae15f2249dd4db2bc8a9d02411a783f2014da5a29ca24e8316"
+      ]
+    },
+    "161035": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620602"
+      ],
+      "seen_fingerprints": [
+        "53e79cb88f570d5e6c59aa275f79c63742085f994a47523efd06423fc165a9a1"
+      ]
+    },
+    "161810": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620596"
+      ],
+      "seen_fingerprints": [
+        "d97f02318da39930848962a4c0f7dbeac65887d6ba4c3202f49b744eb7ab121d"
+      ]
+    },
+    "162695": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620603"
+      ],
+      "seen_fingerprints": [
+        "73c142ecd435db8a572e8df77dab80e7d30f4b5a080d1da2ef278325047e4f9e"
+      ]
+    },
+    "162716": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620617",
+        "3620620"
+      ],
+      "seen_fingerprints": [
+        "aafa02968e0f88ba2485a83b5e5272f68d3ae7857212872ed911f033e0b43009",
+        "20fbf597ed9e21619316cda77e58e26424be372e156b724f78d037d53986093b"
+      ]
+    },
+    "162728": {
+      "title": "",
+      "op_hash": "",
+      "max_start": 0,
+      "seen_post_ids": [
+        "3620588"
+      ],
+      "seen_fingerprints": [
+        "1dd3a155fa33c9a1d625e5bfe86ee78096a1a1f8d209a9bff011278f78507d98"
+      ]
+    }
+  },
   "fitgirl": {
     "seen_links": [
       "https://fitgirl-repacks.site/gears-of-war-4/",
@@ -3305,7 +3563,7 @@
       "t3_1xn1dbh",
       "t3_1xnikpw"
     ],
-    "last_check_ts": 1793791930
+    "last_check_ts": 1793795442
   },
   "steam_deals": {
     "seen_deal_keys": [
@@ -3388,9 +3646,32 @@
       "https://flingtrainer.com/trainer/onimusha-way-of-the-sword-trainer/:20:v1.0+:2026.09.03",
       "https://flingtrainer.com/trainer/the-blood-of-dawnwalker-trainer/:37:v1.0.x+:2026.09.16",
       "https://flingtrainer.com/trainer/metal-gear-solid-peace-walker-master-collection-version-trainer/:20:v1.0+:2026.09.01",
-      "https://flingtrainer.com/trainer/metal-gear-solid-4-guns-of-the-patriots-master-collection-version-trainer/:17:v1.0+:2026.09.01"
+      "https://flingtrainer.com/trainer/metal-gear-solid-4-guns-of-the-patriots-master-collection-version-trainer/:17:v1.0+:2026.09.01",
+      "https://flingtrainer.com/trainer/assassins-creed-black-flag-resynced-trainer/:30:v1.0-v1.0.x+:2026.11.02",
+      "https://flingtrainer.com/trainer/europa-universalis-v-trainer/:33:v1.0-v1.4.x+:2026.10.31",
+      "https://flingtrainer.com/trainer/crimson-desert-enhanced-trainer/:12:Steam Xbox/Game Pass v1.0-v2.x+:2026.10.30",
+      "https://flingtrainer.com/trainer/cyberpunk-2077-trainer-16095388215/:46:Steam Epic Games Store GOG Xbox/Game Pass v1.03-v2.5+:2026.10.28",
+      "https://flingtrainer.com/trainer/s-t-a-l-k-e-r-2-heart-of-chornobyl-trainer/:32:Steam Xbox/Game Pass v1.0-v2.1.x+:2026.10.28",
+      "https://flingtrainer.com/trainer/dying-light-2-stay-human-trainer-1675224644/:33:v1.0-v1.3x+:2026.10.22",
+      "https://flingtrainer.com/trainer/broken-arrow-trainer/:18:v1.0-v1.2.x+:2026.10.22",
+      "https://flingtrainer.com/trainer/eastern-era-trainer/:63:v1.0-v1.2.x+:2026.10.21",
+      "https://flingtrainer.com/trainer/the-lost-village-trainer/:35:v1.0-v1.2.x+:2026.10.21"
     ],
     "known_trainers": {
+      "https://flingtrainer.com/trainer/eastern-era-trainer/": {
+        "game_name": "Eastern Era",
+        "game_version": "v1.0-v1.2.x+",
+        "last_updated": "2026.10.21",
+        "last_notified": "2026-11-04T11:46:21.766800+00:00",
+        "options_count": 63
+      },
+      "https://flingtrainer.com/trainer/broken-arrow-trainer/": {
+        "game_name": "Broken Arrow",
+        "game_version": "v1.0-v1.2.x+",
+        "last_updated": "2026.10.22",
+        "last_notified": "2026-11-04T11:46:21.766784+00:00",
+        "options_count": 18
+      },
       "https://flingtrainer.com/trainer/planet-zoo-2-trainer/": {
         "init_seen": true,
         "game_version": "v1.0.x+",
@@ -3402,6 +3683,13 @@
         "game_version": "v1.0-v1.4.x+",
         "last_updated": "2026.10.06",
         "options_count": 26
+      },
+      "https://flingtrainer.com/trainer/the-lost-village-trainer/": {
+        "game_name": "The Lost Village",
+        "game_version": "v1.0-v1.2.x+",
+        "last_updated": "2026.10.21",
+        "last_notified": "2026-11-04T11:46:21.766811+00:00",
+        "options_count": 35
       },
       "https://flingtrainer.com/trainer/gears-of-war-e-day-trainer/": {
         "init_seen": true,
@@ -3421,6 +3709,13 @@
         "last_updated": "2026.10.29",
         "options_count": 36
       },
+      "https://flingtrainer.com/trainer/europa-universalis-v-trainer/": {
+        "game_name": "Europa Universalis V",
+        "game_version": "v1.0-v1.4.x+",
+        "last_updated": "2026.10.31",
+        "last_notified": "2026-11-04T11:46:21.766682+00:00",
+        "options_count": 33
+      },
       "https://flingtrainer.com/trainer/silent-hill-townfall-trainer/": {
         "init_seen": true,
         "game_version": "v1.5.x+",
@@ -3432,6 +3727,13 @@
         "game_version": "v1.0-v1.1+",
         "last_updated": "2026.09.16",
         "options_count": 26
+      },
+      "https://flingtrainer.com/trainer/crimson-desert-enhanced-trainer/": {
+        "game_name": "Crimson Desert Enhanced",
+        "game_version": "Steam Xbox/Game Pass v1.0-v2.x+",
+        "last_updated": "2026.10.30",
+        "last_notified": "2026-11-04T11:46:21.766707+00:00",
+        "options_count": 12
       },
       "https://flingtrainer.com/trainer/final-fantasy-resonance-trainer/": {
         "init_seen": true,
@@ -3457,6 +3759,13 @@
         "last_updated": "2026.09.03",
         "options_count": 20
       },
+      "https://flingtrainer.com/trainer/cyberpunk-2077-trainer-16095388215/": {
+        "game_name": "Cyberpunk 2077",
+        "game_version": "Steam Epic Games Store GOG Xbox/Game Pass v1.03-v2.5+",
+        "last_updated": "2026.10.28",
+        "last_notified": "2026-11-04T11:46:21.766725+00:00",
+        "options_count": 46
+      },
       "https://flingtrainer.com/trainer/ace-combat-8-wings-of-theve-trainer/": {
         "init_seen": true,
         "game_version": "v1.0+",
@@ -3475,11 +3784,32 @@
         "last_updated": "2026.09.21",
         "options_count": 54
       },
+      "https://flingtrainer.com/trainer/s-t-a-l-k-e-r-2-heart-of-chornobyl-trainer/": {
+        "game_name": "S.T.A.L.K.E.R. 2: Heart of Chornobyl",
+        "game_version": "Steam Xbox/Game Pass v1.0-v2.1.x+",
+        "last_updated": "2026.10.28",
+        "last_notified": "2026-11-04T11:46:21.766738+00:00",
+        "options_count": 32
+      },
       "https://flingtrainer.com/trainer/the-witcher-3-wild-hunt-remastered-trainer/": {
         "init_seen": true,
         "game_version": "v5.0+",
         "last_updated": "2026.09.29",
         "options_count": 23
+      },
+      "https://flingtrainer.com/trainer/assassins-creed-black-flag-resynced-trainer/": {
+        "game_name": "Assassin’s Creed Black Flag Resynced",
+        "game_version": "v1.0-v1.0.x+",
+        "last_updated": "2026.11.02",
+        "last_notified": "2026-11-04T11:46:21.766619+00:00",
+        "options_count": 30
+      },
+      "https://flingtrainer.com/trainer/dying-light-2-stay-human-trainer-1675224644/": {
+        "game_name": "Dying Light 2 Stay Human",
+        "game_version": "v1.0-v1.3x+",
+        "last_updated": "2026.10.22",
+        "last_notified": "2026-11-04T11:46:21.766753+00:00",
+        "options_count": 33
       },
       "https://flingtrainer.com/trainer/total-war-shogun-2-complete-edition-trainer/": {
         "init_seen": true,
@@ -3629,17 +3959,111 @@
       "reddit_t3_1s8lj8u",
       "reddit_t3_1s5v9sx",
       "reddit_t3_1s1nlg7",
-      "steam_4983490"
+      "steam_4983490",
+      "gog_a new beginning: final cut",
+      "gog_bounty train",
+      "gog_state of mind",
+      "gog_silence",
+      "gog_nexus: the jupiter incident",
+      "reddit_t3_1xnm6yl"
     ]
   },
   "steam_app_patches": {
     "last_dates": {
+      "570": 1791332561,
+      "730": 1793224089,
+      "252490": 1792692733,
+      "553850": 1793712441,
+      "1086940": 1774536005,
+      "1091500": 1793025540,
+      "1172470": 1793729895,
       "1237320": 1695916822,
+      "1245620": 1793353140,
       "1627720": 1790834407,
       "2054970": 1791530986,
       "2161700": 1786381205,
       "2358720": 1785895204
     }
+  },
+  "steam_new_launches": {
+    "seen_keys": [
+      "game_5105360",
+      "game_1868410",
+      "game_5433900",
+      "game_5027770",
+      "game_4414460",
+      "game_4287400",
+      "game_5459170",
+      "game_4811700",
+      "game_5010000",
+      "game_5030500",
+      "game_4996220",
+      "game_4503110",
+      "game_5354220",
+      "game_5469970",
+      "game_5233410",
+      "game_5183430",
+      "game_5451230",
+      "game_5335160",
+      "game_4295520",
+      "game_4926050",
+      "game_5381710",
+      "game_5436570",
+      "game_5072640",
+      "game_5221650",
+      "game_5428620",
+      "game_5173710",
+      "game_4966560",
+      "game_4428910",
+      "game_5479840",
+      "game_5456840",
+      "game_5478590",
+      "game_5015250",
+      "game_5456960",
+      "game_3540660",
+      "game_5450620",
+      "dlc_5482700",
+      "dlc_5497750",
+      "dlc_5435640",
+      "dlc_5019970",
+      "dlc_5439300",
+      "dlc_4836560",
+      "dlc_5265740",
+      "dlc_5056810",
+      "dlc_5538290",
+      "dlc_5540090",
+      "dlc_5442910",
+      "dlc_5026450",
+      "dlc_4263330",
+      "dlc_5480710",
+      "dlc_5154460",
+      "dlc_5366160",
+      "dlc_5413230",
+      "dlc_5413430",
+      "dlc_5413460",
+      "dlc_5413450",
+      "dlc_5413440",
+      "dlc_5326990",
+      "dlc_5363810",
+      "dlc_5363800",
+      "dlc_5363790",
+      "dlc_5363780",
+      "dlc_5363760",
+      "dlc_5363750",
+      "dlc_5363740",
+      "dlc_5363730",
+      "dlc_5363720",
+      "dlc_5363710",
+      "dlc_5363700",
+      "dlc_5363680",
+      "dlc_5477300",
+      "game_5452520",
+      "game_4762960",
+      "game_4003400",
+      "game_4904200",
+      "game_5466620",
+      "game_5434550"
+    ]
   },
   "seen_download_links": [
     "141541:magnet:?xt=urn:btih:90d38e9359c9713f15a9c313d1f041c14fbe3156",
@@ -3649,7 +4073,35 @@
     "155718:magnet:?xt=urn:btih:e683e35f354d7f4d1951631ebfab68b3570fb5d6",
     "149979:magnet:?xt=urn:btih:a89a6e23826d31ff58625bdc180d7ebf9e8c0f81"
   ],
-  "steam_free_weekends": {},
+  "steam_free_weekends": {
+    "seen_keys": [
+      "fw_t3_1v4q2wz",
+      "fw_t3_1rlq3bc",
+      "fw_t3_1p35o72",
+      "fw_t3_1oq7kvc",
+      "fw_t3_1lgaa9w",
+      "fw_t3_1lflsqh",
+      "fw_t3_1ij93aw",
+      "fw_t3_1gwlzxu",
+      "fw_t3_1dkhkjj",
+      "fw_t3_1dfeas5",
+      "fw_t3_1df43lt",
+      "fw_t3_1bwc9ds",
+      "fw_t3_1bahbz5",
+      "fw_t3_1axm6c3",
+      "fw_t3_17wtnpd",
+      "fw_t3_17wt9u8",
+      "fw_t3_17s97o9",
+      "fw_t3_176fswf",
+      "fw_t3_16dd3u9",
+      "fw_t3_15b9sor",
+      "fw_t3_155mggw",
+      "fw_t3_14gh6h5",
+      "fw_t3_13s05gb",
+      "fw_t3_13l75im",
+      "fw_t3_13ev0vs"
+    ]
+  },
   "seen_release_signatures": [
     "114322:madisonv305multi22elamigos",
     "154158:brokenloredontlietenoke",
@@ -3701,6 +4153,10 @@
     "107452:ovamagicaupdatev102tenoke",
     "117658:otherworldlegendsupdatev330tenoke",
     "146257:cubicodysseycompleteeditionupdatev1403tenoke",
-    "160601:probablystolencyberpunkshopkeepersimtenoke"
-  ]
+    "160601:probablystolencyberpunkshopkeepersimtenoke",
+    "123813:brotatoprimaldreadtenoke"
+  ],
+  "daily_release_radar": {
+    "last_posted_date": "2026-11-04"
+  }
 }

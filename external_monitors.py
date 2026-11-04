@@ -2623,8 +2623,11 @@ def fetch_steam_search_releases(category_id: int = 998) -> List[Dict[str, Any]]:
             if row.find(class_="linux"):
                 platforms.append("Steam Deck / Linux")
 
-            header_img = f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg"
-            store_url = f"https://store.steampowered.com/app/{appid}/"
+            img_el = row.select_one(".search_capsule img")
+            capsule_img = img_el.get("src") if img_el else None
+            header_img = capsule_img or f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg"
+            raw_href = row.get("href", "")
+            store_url = raw_href.split("?")[0] if raw_href else f"https://store.steampowered.com/app/{appid}/"
 
             item_type = "dlc" if category_id == 21 else "game"
 
@@ -2745,8 +2748,12 @@ def create_steam_new_launch_embed(item: Dict[str, Any]):
     embed.add_field(name="🕒 Discovered", value=f"`{item.get('time_kl', 'Now')}`", inline=True)
 
     embed.add_field(
-        name="🚀 View on Steam",
-        value=f"👉 **[Open {title} on Steam Store]({store_url})**",
+        name="🔗 Quick Access & Web View",
+        value=(
+            f"🌐 **[Open Web View (Store Page)]({store_url})**\n"
+            f"🖥️ **[Launch in Steam Client App](steam://store/{appid})**\n"
+            f"📊 **[View on SteamDB Info](https://steamdb.info/app/{appid}/)**"
+        ),
         inline=False
     )
 

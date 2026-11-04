@@ -379,6 +379,7 @@ DEFAULT_MONITOR_AVATARS: Dict[str, str] = {
     "Steam New Launches": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_launch_icon.png",
     "Steam Game Launches": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_launch_icon.png",
     "Steam DLC Launches": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_dlc_icon.png",
+    "Steam Release Radar": "https://raw.githubusercontent.com/mirzaarsyad74-cmyk/discord/main/assets/icons/steam_deals_icon.png",
     "FitGirl Repacks": "https://fitgirl-repacks.site/wp-content/uploads/2016/08/cropped-icon-192x192.jpg",
     "DODI Repacks": "https://dodi-repacks.site/wp-content/uploads/2019/02/cropped-ICON-192x192.png",
     "Reddit CrackWatch": "https://www.redditstatic.com/desktop2x/img/favicon/android-icon-192x192.png",
@@ -393,6 +394,7 @@ def safe_webhook_send(
     embed: discord.Embed,
     username: str = "CS.RIN.RU Monitor",
     avatar_url: Optional[str] = None,
+    file: Optional[Any] = None,
     max_retries: int = 3,
     delay: float = 1.2
 ) -> bool:
@@ -400,6 +402,7 @@ def safe_webhook_send(
     Sends a Discord webhook with rate-limit shielding and HTTP 429 exponential backoff.
     Guarantees reliable delivery even when multiple releases burst in a single check.
     Automatically assigns high-res monitor avatars for each monitor username.
+    Supports file attachment uploads (e.g. Infographic posters).
     """
     resolved_avatar = avatar_url or DEFAULT_MONITOR_AVATARS.get(username)
 
@@ -408,6 +411,8 @@ def safe_webhook_send(
             send_kwargs: Dict[str, Any] = {"embed": embed, "username": username}
             if resolved_avatar:
                 send_kwargs["avatar_url"] = resolved_avatar
+            if file is not None:
+                send_kwargs["file"] = file
             webhook.send(**send_kwargs)
             time.sleep(delay)
             return True

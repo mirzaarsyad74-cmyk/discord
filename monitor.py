@@ -658,6 +658,14 @@ class ForumMonitor:
         self.save_state()
         return updates
 
+    def check_daily_release_radar(self, force: bool = False) -> Optional[Dict[str, Any]]:
+        """Checks and generates the Daily Steam Release Radar (12:00 AM GMT+8)."""
+        from daily_release_radar import check_daily_release_radar
+        result = check_daily_release_radar(self.state, force=force)
+        if result:
+            self.save_state()
+        return result
+
 
 
     def remove_topic(self, topic_id: str):

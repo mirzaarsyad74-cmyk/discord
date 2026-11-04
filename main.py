@@ -336,6 +336,21 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking Steam new launches: {e}")
 
+    # Check Daily Steam Release Radar (12:00 AM GMT+8)
+    if config.get("watch_daily_release_radar", True):
+        try:
+            from daily_release_radar import create_daily_release_radar_embed
+            daily_data = await asyncio.to_thread(monitor.check_daily_release_radar)
+            if daily_data:
+                logger.info(f"Posting Daily Steam Release Radar for {daily_data['date_display']}...")
+                embed = create_daily_release_radar_embed(daily_data)
+                poster_file = discord.File(daily_data["poster_path"], filename="daily_radar.png")
+                embed.set_image(url="attachment://daily_radar.png")
+                await channel.send(embed=embed, file=poster_file)
+                logger.info("Successfully posted Daily Steam Release Radar!")
+        except Exception as e:
+            logger.error(f"Error checking Daily Steam Release Radar: {e}")
+
 
     # Check monitored game topics (CS.RIN.RU)
     if config.get("watch_csrin", False):
@@ -726,7 +741,8 @@ async def cmd_status(ctx: commands.Context):
     embed.add_field(name="Steam Free Weekends", value="**✅ ACTIVE**" if config.get("watch_steam_free_weekends", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Steam Game Launches", value="**✅ ACTIVE**" if config.get("watch_steam_new_launches", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Steam DLC Launches", value="**✅ ACTIVE**" if config.get("watch_steam_dlc_launches", True) else "❌ Disabled", inline=True)
-    embed.add_field(name="CS.RIN.RU", value="❌ **REMOVED**" if not config.get("watch_csrin", False) else f"✅ Active ({len(config.get('topics', []))} topics)", inline=True)
+    embed.add_field(name="Daily Release Radar (12am)", value="**✅ ACTIVE**" if config.get("watch_daily_release_radar", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="CS.RIN.RU", value="❌ **TURNED OFF**" if not config.get("watch_csrin", False) else f"✅ Active ({len(config.get('topics', []))} topics)", inline=True)
     embed.add_field(name="Check Interval", value=f"`{CHECK_INTERVAL}` seconds", inline=True)
     embed.set_footer(text=f"Serving channel: #{ctx.channel.name}")
     await ctx.send(embed=embed)
@@ -773,6 +789,26 @@ async def slash_remove(interaction: discord.Interaction, url_or_id: str):
 async def slash_check(interaction: discord.Interaction):
     ctx = await commands.Context.from_interaction(interaction)
     await cmd_check(ctx)
+
+@bot.command(name="daily_radar")
+async def cmd_daily_radar(ctx: commands.Context):
+    """Manually generates and posts the Daily Steam Release Radar right now."""
+    msg = await ctx.send("⏳ Fetching today's releases and rendering Daily Steam Release Radar...")
+    from daily_release_radar import create_daily_release_radar_embed
+    daily_data = await asyncio.to_thread(monitor.check_daily_release_radar, force=True)
+    if daily_data:
+        embed = create_daily_release_radar_embed(daily_data)
+        poster_file = discord.File(daily_data["poster_path"], filename="daily_radar.png")
+        embed.set_image(url="attachment://daily_radar.png")
+        await msg.delete()
+        await ctx.send(embed=embed, file=poster_file)
+    else:
+        await msg.edit(content="No daily release radar data could be generated.")
+
+@bot.tree.command(name="daily_radar", description="Generate and post today's Steam Release Radar right now")
+async def slash_daily_radar(interaction: discord.Interaction):
+    ctx = await commands.Context.from_interaction(interaction)
+    await cmd_daily_radar(ctx)
 
 
 # ==============================================================================
@@ -899,6 +935,26 @@ async def run_webhook_daemon(webhook_url: str):
                     u_name = "Steam DLC Launches" if upd.get("item_type") == "dlc" else "Steam Game Launches"
                     safe_webhook_send(webhook, create_steam_new_launch_embed(upd), username=u_name)
                     logger.info(f"Posted Steam Launch [{upd.get('item_type')}]: {upd.get('title')}")
+
+            # Check Daily Steam Release Radar (12:00 AM GMT+8)
+            if current_cfg.get("watch_daily_release_radar", True):
+                try:
+                    from daily_release_radar import create_daily_release_radar_embed
+                    daily_data = await asyncio.to_thread(monitor.check_daily_release_radar)
+                    if daily_data:
+                        logger.info(f"Posting Daily Steam Release Radar for {daily_data['date_display']} via Webhook...")
+                        embed = create_daily_release_radar_embed(daily_data)
+                        poster_file = discord.File(daily_data["poster_path"], filename="daily_radar.png")
+                        embed.set_image(url="attachment://daily_radar.png")
+                        safe_webhook_send(
+                            webhook,
+                            embed,
+                            username="Steam Release Radar",
+                            file=poster_file
+                        )
+                        logger.info("Successfully posted Daily Steam Release Radar via webhook!")
+                except Exception as e:
+                    logger.error(f"Error checking Daily Steam Release Radar: {e}")
 
 
             if current_cfg.get("watch_csrin", False):
@@ -1121,6 +1177,8 @@ def start_health_server():
                     ("Steam Free Weekends", config.get("watch_steam_free_weekends", True)),
                     ("Steam New Game Launches", config.get("watch_steam_new_launches", True)),
                     ("Steam DLC Launches", config.get("watch_steam_dlc_launches", True)),
+                    ("Daily Release Radar (12am GMT+8)", config.get("watch_daily_release_radar", True)),
+                    ("CS.RIN.RU", config.get("watch_csrin", False)),
                 ] if enabled
             ]
             resp = json.dumps({

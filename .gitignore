@@ -16,3 +16,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Generated runtime images
+assets/daily_radar/

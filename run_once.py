@@ -386,6 +386,23 @@ def main():
                 safe_webhook_send(webhook, embed, username=u_name)
                 logger.info(f"Posted Steam Launch [{upd.get('item_type')}]: {upd.get('title')}")
 
+    # 15. Daily Steam Release Radar (12:00 AM GMT+8)
+    if config.get("watch_daily_release_radar", True):
+        logger.info("Checking Daily Steam Release Radar (12:00 AM GMT+8)...")
+        from daily_release_radar import create_daily_release_radar_embed
+        daily_data = monitor.check_daily_release_radar()
+        if daily_data:
+            embed = create_daily_release_radar_embed(daily_data)
+            poster_file = discord.File(daily_data["poster_path"], filename="daily_radar.png")
+            embed.set_image(url="attachment://daily_radar.png")
+            safe_webhook_send(
+                webhook,
+                embed,
+                username="Steam Release Radar",
+                file=poster_file
+            )
+            logger.info("Posted Daily Steam Release Radar!")
+
     logger.info("Single-run execution finished successfully!")
 
 
