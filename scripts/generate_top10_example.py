@@ -84,7 +84,7 @@ def fetch_top10_suo_games():
         print("Error fetching Steam sellers:", e)
 
     print("Fetching SUO catalog...")
-    suo_items = external_monitors.fetch_suo_catalog(limit=8000)
+    suo_items = external_monitors.fetch_suo_catalog(limit=0)
     total_suo_count = len(suo_items)
     print(f"Fetched {total_suo_count} items from SUO.")
 

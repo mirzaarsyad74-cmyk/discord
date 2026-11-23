@@ -1821,21 +1821,25 @@ def fetch_suo_catalog(limit: int = 150, timeout: int = 4) -> List[Dict[str, Any]
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    target_bytes = limit * 450  # ~300-350 bytes per game JSON object
+    target_bytes = (limit * 450) if (limit and limit > 0) else 0
 
     def parse_stream_response(response) -> Optional[List[Dict[str, Any]]]:
         try:
             chunks = []
             total_read = 0
-            for chunk in response.iter_content(chunk_size=4096, decode_unicode=True):
+            for chunk in response.iter_content(chunk_size=8192, decode_unicode=True):
                 if chunk:
                     chunks.append(chunk)
                     total_read += len(chunk)
-                    if total_read >= target_bytes:
+                    if target_bytes > 0 and total_read >= target_bytes:
                         break
             raw_text = "".join(chunks).strip()
             if not raw_text.startswith("["):
                 return None
+            if raw_text.endswith("]"):
+                parsed = json.loads(raw_text)
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    return parsed
             last_brace = raw_text.rfind("}")
             if last_brace == -1:
                 return None

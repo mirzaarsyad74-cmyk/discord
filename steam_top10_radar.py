@@ -89,7 +89,7 @@ def fetch_top10_suo_games():
     except Exception as e:
         logger.warning(f"Error fetching Steam top sellers: {e}")
 
-    suo_items = external_monitors.fetch_suo_catalog(limit=12000)
+    suo_items = external_monitors.fetch_suo_catalog(limit=0)
     total_suo_count = len(suo_items)
     logger.info(f"Cross-referencing Steam charts against {total_suo_count} SUO games...")
 
