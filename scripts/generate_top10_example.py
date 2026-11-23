@@ -45,6 +45,66 @@ def get_system_font(size: int, bold: bool = False):
         return ImageFont.load_default()
 
 
+def draw_vector_icon(draw: ImageDraw.Draw, icon_type: str, x: float, y: float, color: tuple, size: float = 12):
+    """
+    Renders pixel-perfect, crisp vector icons directly on the canvas without
+    relying on system emoji fonts (which cause missing glyph tofu squares).
+    """
+    s = size / 12.0
+    if icon_type == "catalog":
+        # Library / Database books archive
+        draw.rounded_rectangle([x, y + 8*s, x + 12*s, y + 11*s], radius=1, fill=color)
+        draw.rounded_rectangle([x + 1*s, y + 4*s, x + 13*s, y + 7*s], radius=1, fill=color)
+        draw.rounded_rectangle([x + 2*s, y, x + 12*s, y + 3*s], radius=1, fill=color)
+    elif icon_type == "storage":
+        # Storage Drive / SSD
+        draw.rounded_rectangle([x, y + 1*s, x + 13*s, y + 11*s], radius=2, outline=color, width=1)
+        draw.line([(x + 2*s, y + 4*s), (x + 8*s, y + 4*s)], fill=color, width=1)
+        draw.ellipse([x + 9*s, y + 7*s, x + 11*s, y + 9*s], fill=color)
+    elif icon_type == "network":
+        # Global Network Sphere
+        draw.ellipse([x, y, x + 12*s, y + 12*s], outline=color, width=1)
+        draw.ellipse([x + 3*s, y, x + 9*s, y + 12*s], outline=color, width=1)
+        draw.line([(x, y + 6*s), (x + 12*s, y + 6*s)], fill=color, width=1)
+    elif icon_type == "lightning":
+        # Lightning Bolt
+        pts = [
+            (x + 6*s, y),
+            (x + 2*s, y + 7*s),
+            (x + 5.5*s, y + 7*s),
+            (x + 3.5*s, y + 12*s),
+            (x + 10.5*s, y + 5*s),
+            (x + 6.5*s, y + 5*s),
+            (x + 8.5*s, y)
+        ]
+        draw.polygon(pts, fill=color)
+    elif icon_type == "players":
+        # Dual Player Avatars
+        draw.ellipse([x + 2*s, y + 1*s, x + 6.5*s, y + 5.5*s], fill=color)
+        draw.pieslice([x, y + 6*s, x + 8.5*s, y + 14*s], 180, 360, fill=color)
+        draw.ellipse([x + 7*s, y, x + 11*s, y + 4*s], fill=color)
+        draw.pieslice([x + 5*s, y + 5*s, x + 13*s, y + 13*s], 180, 360, fill=color)
+    elif icon_type == "box":
+        # Package Box
+        draw.rounded_rectangle([x, y + 1*s, x + 11*s, y + 11*s], radius=1, outline=color, width=1)
+        draw.line([(x, y + 4*s), (x + 11*s, y + 4*s)], fill=color, width=1)
+        draw.line([(x + 5.5*s, y + 4*s), (x + 5.5*s, y + 11*s)], fill=color, width=1)
+    elif icon_type == "download":
+        # Download Arrow into Tray
+        draw.line([(x + 5.5*s, y), (x + 5.5*s, y + 7*s)], fill=color, width=2)
+        draw.polygon([(x + 2.5*s, y + 6*s), (x + 8.5*s, y + 6*s), (x + 5.5*s, y + 9.5*s)], fill=color)
+        draw.line([(x + 1*s, y + 8*s), (x + 1*s, y + 11*s), (x + 10*s, y + 11*s), (x + 10*s, y + 8*s)], fill=color, width=1)
+    elif icon_type == "star":
+        # 5-pointed Star
+        import math
+        pts = []
+        for i in range(10):
+            r = (5.5 * s) if i % 2 == 0 else (2.4 * s)
+            angle = i * math.pi / 5 - math.pi / 2
+            pts.append((x + 6 * s + r * math.cos(angle), y + 6 * s + r * math.sin(angle)))
+        draw.polygon(pts, fill=color)
+
+
 def load_suo_icon(target_size: tuple = (72, 72)) -> Image.Image:
     """Loads the Steam Unlock ONENNABE icon from disk or bundled assets."""
     candidates = [
@@ -242,7 +302,7 @@ def render_top10_poster(games, output_path: str, suo_stats=None):
     now_kl = datetime.now(KL_TZ)
     date_str = now_kl.strftime("%d %b %Y, %I:%M %p GMT+8").upper()
     badge_steam = "OFFICIAL STEAM CHARTS × STEAMUNLOCK WANNABE"
-    badge_catalog = "⚡ REAL-TIME CATALOG ARCHIVE • HOURLY UPDATED"
+    badge_catalog = "REAL-TIME CATALOG ARCHIVE • HOURLY UPDATED"
 
     # Paste Official Steam Unlock ONENNABE App Icon in Header
     suo_ico_70 = load_suo_icon((70, 70))
@@ -256,7 +316,7 @@ def render_top10_poster(games, output_path: str, suo_stats=None):
     bbox_b1 = draw.textbbox((0, 0), badge_steam, font=font_badge)
     b1_w = bbox_b1[2] - bbox_b1[0] + 28
     bbox_b2 = draw.textbbox((0, 0), badge_catalog, font=font_badge)
-    b2_w = bbox_b2[2] - bbox_b2[0] + 28
+    b2_w = bbox_b2[2] - bbox_b2[0] + 46
     gap_badges = 16
     total_badges_w = b1_w + gap_badges + b2_w
     start_bx = (W - total_badges_w) // 2
@@ -268,7 +328,8 @@ def render_top10_poster(games, output_path: str, suo_stats=None):
     # Draw Badge 2 (Live / Cyan)
     bx2 = start_bx + b1_w + gap_badges
     draw.rounded_rectangle([bx2, 20, bx2 + b2_w, 48], radius=14, fill=(15, 23, 42, 255), outline=(56, 189, 248, 230), width=1)
-    draw.text((bx2 + 14, 26), badge_catalog, font=font_badge, fill=(56, 189, 248, 255))
+    draw_vector_icon(draw, "lightning", bx2 + 14, 28, (56, 189, 248), size=12)
+    draw.text((bx2 + 32, 26), badge_catalog, font=font_badge, fill=(56, 189, 248, 255))
 
     # Main Title
     title_text = "TOP 10 STEAM HITS (AVAILABLE FOR DOWNLOAD)"
@@ -289,13 +350,13 @@ def render_top10_poster(games, output_path: str, suo_stats=None):
     col_h = 66
 
     stat_cards = [
-        ("📚 TOTAL GAMES IN CATALOG", f"{total_suo_count:,} GAMES", (52, 211, 153), (16, 185, 129, 220)),
-        ("💾 TOTAL STORAGE SIZE", f"{total_tb:,.2f} TB (~{int(total_gb):,} GB)", (251, 191, 36), (245, 158, 11, 220)),
-        ("🌐 ONLINE MULTIPLAYER READY", f"{online_count:,} GAMES READY", (56, 189, 248), (14, 165, 233, 220)),
-        ("⚡ BYPASS / HYPERVISOR", f"{bypass_count:,} TITLES SUPPORTED", (192, 132, 252), (168, 85, 247, 220)),
+        ("catalog", "TOTAL GAMES IN CATALOG", f"{total_suo_count:,} GAMES", (52, 211, 153), (16, 185, 129, 220)),
+        ("storage", "TOTAL STORAGE SIZE", f"{total_tb:,.2f} TB (~{int(total_gb):,} GB)", (251, 191, 36), (245, 158, 11, 220)),
+        ("network", "ONLINE MULTIPLAYER READY", f"{online_count:,} GAMES READY", (56, 189, 248), (14, 165, 233, 220)),
+        ("lightning", "BYPASS / HYPERVISOR", f"{bypass_count:,} TITLES SUPPORTED", (192, 132, 252), (168, 85, 247, 220)),
     ]
 
-    for idx_c, (lbl, val, val_col, border_col) in enumerate(stat_cards):
+    for idx_c, (icon_type, lbl, val, val_col, border_col) in enumerate(stat_cards):
         cx = table_x + idx_c * (col_w + gap)
         draw.rounded_rectangle(
             [cx, table_y, cx + col_w, table_y + col_h],
@@ -305,7 +366,8 @@ def render_top10_poster(games, output_path: str, suo_stats=None):
             width=1
         )
         draw.rounded_rectangle([cx + 3, table_y + 10, cx + 7, table_y + col_h - 10], radius=2, fill=val_col)
-        draw.text((cx + 16, table_y + 12), lbl, font=font_stat_lbl, fill=(148, 163, 184, 255))
+        draw_vector_icon(draw, icon_type, cx + 16, table_y + 13, val_col, size=13)
+        draw.text((cx + 35, table_y + 12), lbl, font=font_stat_lbl, fill=(148, 163, 184, 255))
         draw.text((cx + 16, table_y + 34), val, font=font_stat_val, fill=val_col)
 
     # Top separator
@@ -318,8 +380,6 @@ def render_top10_poster(games, output_path: str, suo_stats=None):
     card_h = 160
     start_x = 60
     start_y = 222
-    gap_x = 40
-    gap_y = 16
     gap_x = 40
     gap_y = 16
 
@@ -393,59 +453,81 @@ def render_top10_poster(games, output_path: str, suo_stats=None):
         rank_str = g.get("rank_str", "▬ STILL")
         trend = g.get("rank_trend", "STILL")
 
-        if trend == "UP":
-            p_fill = (16, 185, 129, 40)
-            p_outline = (16, 185, 129, 230)
-            p_fg = (52, 211, 153, 255)
-        elif trend == "DOWN":
-            p_fill = (239, 68, 68, 40)
-            p_outline = (239, 68, 68, 230)
-            p_fg = (248, 113, 113, 255)
-        elif trend == "NEW":
+        if trend == "NEW":
             p_fill = (245, 158, 11, 40)
             p_outline = (245, 158, 11, 230)
             p_fg = (251, 191, 36, 255)
-        else:  # STILL
-            p_fill = (30, 41, 59, 180)
-            p_outline = (71, 85, 105, 200)
-            p_fg = (148, 163, 184, 255)
+            txt_bbox = draw.textbbox((0, 0), "NEW", font=font_pill)
+            p_w = 20 + (txt_bbox[2] - txt_bbox[0]) + 10
+            p_h = 22
+            px = cx + card_w - p_w - 14
+            py = cy + 14
+            draw.rounded_rectangle([px, py, px + p_w, py + p_h], radius=6, fill=p_fill, outline=p_outline, width=1)
+            draw_vector_icon(draw, "star", px + 8, py + 5, p_fg, size=11)
+            draw.text((px + 22, py + 4), "NEW", font=font_pill, fill=p_fg)
+        else:
+            if trend == "UP":
+                p_fill = (16, 185, 129, 40)
+                p_outline = (16, 185, 129, 230)
+                p_fg = (52, 211, 153, 255)
+            elif trend == "DOWN":
+                p_fill = (239, 68, 68, 40)
+                p_outline = (239, 68, 68, 230)
+                p_fg = (248, 113, 113, 255)
+            else:  # STILL
+                p_fill = (30, 41, 59, 180)
+                p_outline = (71, 85, 105, 200)
+                p_fg = (148, 163, 184, 255)
 
-        p_bbox = draw.textbbox((0, 0), rank_str, font=font_pill)
-        p_w = p_bbox[2] - p_bbox[0] + 16
-        p_h = 22
-        px = cx + card_w - p_w - 14
-        py = cy + 14
-
-        draw.rounded_rectangle([px, py, px + p_w, py + p_h], radius=6, fill=p_fill, outline=p_outline, width=1)
-        draw.text((px + 8, py + 4), rank_str, font=font_pill, fill=p_fg)
+            p_bbox = draw.textbbox((0, 0), rank_str, font=font_pill)
+            p_w = p_bbox[2] - p_bbox[0] + 16
+            p_h = 22
+            px = cx + card_w - p_w - 14
+            py = cy + 14
+            draw.rounded_rectangle([px, py, px + p_w, py + p_h], radius=6, fill=p_fill, outline=p_outline, width=1)
+            draw.text((px + 8, py + 4), rank_str, font=font_pill, fill=p_fg)
 
         # Steam Popularity Subtitle
         if g.get("concurrent", 0) > 0:
-            players_str = f"👥 {g['concurrent']:,} Playing on Steam"
+            draw_vector_icon(draw, "players", info_x, cy + 47, (139, 148, 158), size=12)
+            draw.text((info_x + 18, cy + 44), f"{g['concurrent']:,} Playing on Steam", font=font_card_sub, fill=(139, 148, 158, 255))
         else:
-            players_str = f"📈 Steam Top Seller #{g.get('steam_rank', 'Top')}"
-        draw.text((info_x, cy + 44), players_str, font=font_card_sub, fill=(139, 148, 158, 255))
+            draw_vector_icon(draw, "lightning", info_x, cy + 47, (139, 148, 158), size=11)
+            draw.text((info_x + 16, cy + 44), f"Steam Top Seller #{g.get('steam_rank', 'Top')}", font=font_card_sub, fill=(139, 148, 158, 255))
 
         # Badges row
         badge_y = cy + 76
         # 1. Size Badge
-        size_txt = f"📦 {g.get('size_gb', 'N/A')}"
-        sb_w = draw.textbbox((0, 0), size_txt, font=font_pill)[2] + 16
+        size_val = str(g.get("size_gb", "N/A"))
+        s_bbox = draw.textbbox((0, 0), size_val, font=font_pill)
+        sb_w = 24 + (s_bbox[2] - s_bbox[0]) + 10
         draw.rounded_rectangle([info_x, badge_y, info_x + sb_w, badge_y + 22], radius=6, fill=(30, 41, 59, 255))
-        draw.text((info_x + 8, badge_y + 4), size_txt, font=font_pill, fill=(226, 232, 240, 255))
+        draw_vector_icon(draw, "box", info_x + 8, badge_y + 5, (226, 232, 240), size=11)
+        draw.text((info_x + 24, badge_y + 4), size_val, font=font_pill, fill=(226, 232, 240, 255))
 
         # 2. Online Badge
         is_online = str(g.get("online_supported", "")).lower() == "yes"
-        on_txt = "🌐 ONLINE READY" if is_online else "OFFLINE SINGLEPLAYER"
-        on_col = (16, 185, 129) if is_online else (100, 116, 139)
-        ob_w = draw.textbbox((0, 0), on_txt, font=font_pill)[2] + 16
-        ob_x = info_x + sb_w + 8
-        draw.rounded_rectangle([ob_x, badge_y, ob_x + ob_w, badge_y + 22], radius=6, fill=(15, 23, 42, 255), outline=on_col, width=1)
-        draw.text((ob_x + 8, badge_y + 4), on_txt, font=font_pill, fill=on_col)
+        if is_online:
+            on_txt = "ONLINE READY"
+            on_col = (16, 185, 129)
+            ob_bbox = draw.textbbox((0, 0), on_txt, font=font_pill)
+            ob_w = 24 + (ob_bbox[2] - ob_bbox[0]) + 10
+            ob_x = info_x + sb_w + 8
+            draw.rounded_rectangle([ob_x, badge_y, ob_x + ob_w, badge_y + 22], radius=6, fill=(15, 23, 42, 255), outline=on_col, width=1)
+            draw_vector_icon(draw, "network", ob_x + 8, badge_y + 5, on_col, size=11)
+            draw.text((ob_x + 24, badge_y + 4), on_txt, font=font_pill, fill=on_col)
+        else:
+            on_txt = "OFFLINE ONLY"
+            on_col = (100, 116, 139)
+            ob_bbox = draw.textbbox((0, 0), on_txt, font=font_pill)
+            ob_w = 12 + (ob_bbox[2] - ob_bbox[0]) + 12
+            ob_x = info_x + sb_w + 8
+            draw.rounded_rectangle([ob_x, badge_y, ob_x + ob_w, badge_y + 22], radius=6, fill=(15, 23, 42, 255), outline=on_col, width=1)
+            draw.text((ob_x + 10, badge_y + 4), on_txt, font=font_pill, fill=on_col)
 
         # 3. Downloads / Status text
-        dls_txt = f"📥 {g.get('downloads', 0):,} Downloads"
-        draw.text((info_x, cy + 118), dls_txt, font=font_pill, fill=(56, 189, 248, 255))
+        draw_vector_icon(draw, "download", info_x, cy + 120, (56, 189, 248), size=12)
+        draw.text((info_x + 18, cy + 118), f"{g.get('downloads', 0):,} Downloads", font=font_pill, fill=(56, 189, 248, 255))
 
         # SUO direct link label
         draw.text((cx + card_w - 110, cy + 118), "AVAILABLE >", font=font_pill, fill=(16, 185, 129, 255))
@@ -477,11 +559,11 @@ if __name__ == "__main__":
     demo_statuses = [
         ("STILL", "▬ STILL"),
         ("UP", "▲ +2"),
-        ("NEW", "★ NEW"),
+        ("NEW", "NEW"),
         ("DOWN", "▼ -1"),
         ("STILL", "▬ STILL"),
         ("UP", "▲ +3"),
-        ("NEW", "★ NEW"),
+        ("NEW", "NEW"),
         ("DOWN", "▼ -2"),
         ("STILL", "▬ STILL"),
         ("UP", "▲ +1")
