@@ -133,6 +133,7 @@
   "send_latest_post_on_startup": false,
   "csrin_cookie": "",
   "mongodb_uri": "mongodb+srv://MirzaArsyad:M%40rza2532001@cluster0.4u3scqg.mongodb.net/?retryWrites=true&w=majority",
+  "reddit_proxy": "",
   "neon_database_url": "",
   "supabase_url": "https://pbhojxubeuapmfvmuoig.supabase.co",
   "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBiaG9qeHViZXVhcG1mdm11b2lnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MzA2NjU2MiwiZXhwIjoyMTA4NjQyNTYyfQ.d0xrgE6_-WxtbL_i2MvD2SvHOMN3C8-7BesTfgAstSY"

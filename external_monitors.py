@@ -1,4 +1,6 @@
+import os
 import re
+import json
 import time
 import logging
 from datetime import datetime, timezone, timedelta
@@ -109,22 +111,148 @@ STANDARD_HEADERS = {
 }
 
 
+_last_working_reddit_proxy: Optional[str] = None
+_cached_reddit_proxies: List[str] = []
+_reddit_proxies_fetched_at: float = 0.0
+
+
+def get_configured_reddit_proxy() -> Optional[str]:
+    """Gets user-configured proxy from environment or config.json."""
+    p = os.getenv("REDDIT_PROXY", "").strip() or os.getenv("HTTP_PROXY", "").strip()
+    if not p:
+        cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    p = cfg.get("reddit_proxy", "").strip()
+            except Exception:
+                pass
+    return p or None
+
+
+def fetch_reddit_json(path_or_url: str = "/r/CrackWatch/new.json?limit=25", timeout: int = 5) -> Optional[Dict[str, Any]]:
+    """
+    Fetches Reddit JSON with intelligent auto-proxy failover, IP-ban shielding,
+    and privacy mirror fallbacks.
+    Prevents HTTP 429 and cloud datacenter IP blocks on services like Koyeb.
+    """
+    global _last_working_reddit_proxy, _cached_reddit_proxies, _reddit_proxies_fetched_at
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+
+    sub_path = path_or_url if path_or_url.startswith("/") else ("/" + path_or_url.split("reddit.com/")[-1].lstrip("/"))
+
+    # 1. Custom user-configured proxy (if specified)
+    cfg_proxy = get_configured_reddit_proxy()
+    if cfg_proxy:
+        try:
+            p_dict = {"http": cfg_proxy, "https": cfg_proxy}
+            res = requests.get(f"https://old.reddit.com{sub_path}", headers=headers, proxies=p_dict, timeout=timeout)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, dict) and "data" in data:
+                    return data
+        except Exception as e:
+            logger.debug(f"User Reddit proxy failed: {e}")
+
+    # 2. Direct attempt to old.reddit.com
+    for domain in ["https://old.reddit.com", "https://www.reddit.com"]:
+        try:
+            res = requests.get(f"{domain}{sub_path}", headers=headers, timeout=timeout)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, dict) and "data" in data:
+                    return data
+        except Exception:
+            pass
+
+    # 3. Last Known Working Proxy Relay
+    if _last_working_reddit_proxy:
+        try:
+            p_dict = {"http": f"http://{_last_working_reddit_proxy}", "https": f"http://{_last_working_reddit_proxy}"}
+            res = requests.get(f"https://old.reddit.com{sub_path}", headers=headers, proxies=p_dict, timeout=timeout)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, dict) and "data" in data:
+                    return data
+        except Exception:
+            _last_working_reddit_proxy = None
+
+    # 4. Fetch fresh elite rotating HTTPS proxies
+    now = time.time()
+    if now - _reddit_proxies_fetched_at > 300 or not _cached_reddit_proxies:
+        try:
+            p_res = requests.get(
+                "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=2500&country=all&ssl=yes&anonymity=elite",
+                timeout=4
+            )
+            if p_res.status_code == 200:
+                _cached_reddit_proxies = [p.strip() for p in p_res.text.splitlines() if p.strip()]
+                _reddit_proxies_fetched_at = now
+        except Exception:
+            pass
+
+    for candidate in _cached_reddit_proxies[:8]:
+        try:
+            p_dict = {"http": f"http://{candidate}", "https": f"http://{candidate}"}
+            res = requests.get(f"https://old.reddit.com{sub_path}", headers=headers, proxies=p_dict, timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, dict) and "data" in data:
+                    _last_working_reddit_proxy = candidate
+                    logger.info(f"Bypassed Reddit firewall block via auto-proxy ({candidate})")
+                    return data
+        except Exception:
+            continue
+
+    # 5. Public Privacy Mirror Gateways (Redlib / SafeReddit)
+    for mirror in ["https://redlib.privacynerd.de", "https://safereddit.com"]:
+        try:
+            res = requests.get(f"{mirror}{sub_path}", headers=headers, timeout=timeout)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, dict) and "data" in data:
+                    return data
+        except Exception:
+            pass
+
+    return None
+
+
 def fetch_reddit_feed(url: str) -> Optional[str]:
     """
-    Fetches Reddit RSS feed with Discordbot User-Agent and curl_cffi browser TLS impersonation fallback.
-    Prevents HTTP 429 and Cloudflare/Fastly blocks on cloud datacenter IPs (like Koyeb).
+    Fetches Reddit RSS/Atom feed with auto-proxy failover and TLS impersonation.
     """
-    # 1. Primary attempt: Discordbot User-Agent (whitelisted by Reddit WAF)
+    global _last_working_reddit_proxy
+
+    # Standardize to old.reddit if www.reddit.com was passed
+    target_url = url.replace("https://www.reddit.com", "https://old.reddit.com")
+
+    # 1. Custom or cached proxy
+    proxy_cand = get_configured_reddit_proxy() or _last_working_reddit_proxy
+    if proxy_cand:
+        try:
+            p_str = proxy_cand if proxy_cand.startswith("http") else f"http://{proxy_cand}"
+            res = requests.get(target_url, headers=REDDIT_HEADERS, proxies={"http": p_str, "https": p_str}, timeout=8)
+            if res.status_code == 200 and ("<entry>" in res.text or "<item>" in res.text):
+                return res.text
+        except Exception:
+            pass
+
+    # 2. Direct attempt
     try:
-        res = requests.get(url, headers=REDDIT_HEADERS, timeout=12)
+        res = requests.get(target_url, headers=REDDIT_HEADERS, timeout=8)
         if res.status_code == 200 and ("<entry>" in res.text or "<item>" in res.text):
             return res.text
-        if res.status_code == 429:
-            logger.info(f"Reddit 429 received on {url}. Retrying via curl_cffi browser TLS impersonation...")
     except Exception as e:
-        logger.debug(f"requests error fetching {url}: {e}")
+        logger.debug(f"Direct requests error fetching {target_url}: {e}")
 
-    # 2. Fallback attempt: curl_cffi with Chrome 120 browser handshake
+    # 3. Fallback attempt: curl_cffi Chrome impersonation
     try:
         from curl_cffi import requests as c_requests
         c_headers = {
@@ -132,11 +260,11 @@ def fetch_reddit_feed(url: str) -> Optional[str]:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9"
         }
-        res_c = c_requests.get(url, headers=c_headers, impersonate="chrome120", timeout=12)
+        res_c = c_requests.get(target_url, headers=c_headers, impersonate="chrome120", timeout=8)
         if res_c.status_code == 200 and ("<entry>" in res_c.text or "<item>" in res_c.text):
             return res_c.text
-    except Exception as e:
-        logger.debug(f"curl_cffi error fetching {url}: {e}")
+    except Exception:
+        pass
 
     return None
 
@@ -360,7 +488,7 @@ def check_dodi_feed(state: dict) -> List[Dict[str, Any]]:
 
 
 def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
-    """Fetches new releases and scene crack announcements from r/CrackWatch."""
+    """Fetches new releases and scene crack announcements from r/CrackWatch with auto-proxy protection."""
     cw_state = state.setdefault("crackwatch", {})
     seen_ids = set(str(x) for x in cw_state.get("seen_ids", []))
 
@@ -372,28 +500,8 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
 
     try:
         import html
-        feed_xml = fetch_reddit_feed(CRACKWATCH_RSS_URL)
         cw_state["last_check_ts"] = now_ts
-        if not feed_xml:
-            return []
-
-        entries = re.findall(r'<entry>(.*?)</entry>', feed_xml, re.DOTALL)
-        if not entries:
-            return []
-
-        # First run initialization
-        if not seen_ids:
-            logger.info("Initializing r/CrackWatch tracker with current entries...")
-            init_ids = []
-            for e in entries:
-                id_m = re.search(r'<id>(.*?)</id>', e)
-                if id_m:
-                    init_ids.append(id_m.group(1).strip())
-            cw_state["seen_ids"] = update_seen_list([], init_ids, max_len=500)
-            return []
-
-        new_items = []
-        newly_seen = []
+        data = fetch_reddit_json("/r/CrackWatch/new.json?limit=25")
 
         GROUPS_PATTERN = (
             r'\b(?:rune|tenoke|flt|fairlight|skidrow|codex|razor1911|empress|caviator|plaza|cpy|'
@@ -408,88 +516,191 @@ def check_crackwatch_reddit(state: dict) -> List[Dict[str, Any]]:
             r'(?i)\b(?:discussion|rumor|humor|meme|suggestion)\b'
         ]
 
-        for e in entries:
-            id_m = re.search(r'<id>(.*?)</id>', e)
-            entry_id = id_m.group(1).strip() if id_m else ""
-            if not entry_id or entry_id in seen_ids:
-                continue
+        new_items = []
+        newly_seen = []
 
-            title_m = re.search(r'<title>(.*?)</title>', e)
-            title = html.unescape(title_m.group(1).strip()) if title_m else ""
+        # PRIMARY PARSER: JSON
+        if data and isinstance(data, dict) and "data" in data and "children" in data["data"]:
+            entries = data["data"]["children"]
+            if not seen_ids:
+                logger.info("Initializing r/CrackWatch tracker with current entries...")
+                init_ids = [c.get("data", {}).get("name", "").strip() for c in entries if c.get("data", {}).get("name")]
+                cw_state["seen_ids"] = update_seen_list([], init_ids, max_len=500)
+                return []
 
-            link_m = re.search(r'<link\s+href="([^"]+)"', e)
-            link = link_m.group(1).strip() if link_m else ""
+            for c in entries:
+                p = c.get("data", {})
+                entry_id = p.get("name", "").strip()
+                if not entry_id or entry_id in seen_ids:
+                    continue
 
-            upd_m = re.search(r'<updated>(.*?)</updated>', e)
-            updated = upd_m.group(1).strip() if upd_m else ""
+                title = html.unescape(p.get("title", "").strip())
+                permalink = p.get("permalink", "")
+                link = f"https://www.reddit.com{permalink}" if permalink.startswith("/") else p.get("url", "")
+                author = p.get("author", "CrackWatch")
+                created_utc = p.get("created_utc", 0)
+                selftext = p.get("selftext", "")
 
-            author_m = re.search(r'<author>\s*<name>(.*?)</name>', e)
-            author = author_m.group(1).strip() if author_m else "CrackWatch"
+                nfo_m = re.search(r'https?://[^\s\)\'\"\[\]]+\.(?:png|jpg|jpeg|webp)|https?://(?:i\.)?ibb\.co/[^\s\)\'\"\[\]]+', selftext, re.I)
+                nfo_url = nfo_m.group(0) if nfo_m else None
 
-            # Parse content HTML for metadata (NFO link, Steam link, size)
-            content_m = re.search(r'<content[^>]*>(.*?)</content>', e, re.DOTALL)
-            content_raw = html.unescape(content_m.group(1)) if content_m else ""
+                steam_m = re.search(r'https?://store\.steampowered\.com/app/\d+[^/\s\)\'\"\[\]]*', selftext)
+                steam_url = steam_m.group(0) if steam_m else None
 
-            nfo_m = re.search(r'href=[\'"](https?://[^\'"]+\.(?:png|jpg|jpeg|webp)|https?://(?:i\.)?ibb\.co/[^\'"]+)[\'"][^>]*>NFO', content_raw, re.I)
-            nfo_url = nfo_m.group(1) if nfo_m else None
+                size_m = re.search(r'Release Size:\s*([0-9.]+\s*[MGT]B)', selftext, re.I)
+                release_size = size_m.group(1) if size_m else None
 
-            steam_m = re.search(r'href=[\'"](https?://store\.steampowered\.com/app/\d+[^/\'"]*)', content_raw)
-            steam_url = steam_m.group(1) if steam_m else None
+                t_lower = title.lower()
+                clean_author = re.sub(r'^/?u/', '', author.strip().lower())
 
-            size_m = re.search(r'Release Size:\s*([0-9.]+\s*[MGT]B)', content_raw, re.I)
-            release_size = size_m.group(1) if size_m else None
+                if clean_author == "automoderator" or any(re.search(pat, t_lower) for pat in EXCLUDE_PATTERNS):
+                    seen_ids.add(entry_id)
+                    newly_seen.append(entry_id)
+                    continue
 
-            # Filter out non-release posts (questions, humor, drama, automoderator)
-            t_lower = title.lower()
-            clean_author = re.sub(r'^/?u/', '', author.strip().lower())
+                is_voices38 = clean_author in ("voices38", "v0ices38") or any(v in t_lower for v in ["voices38", "v0ices38"])
+                is_valid_release = any([
+                    is_voices38,
+                    bool(nfo_url),
+                    re.search(GROUPS_PATTERN, t_lower),
+                    re.search(KEYWORDS_PATTERN, t_lower),
+                    re.search(SCENE_TAG_PATTERN, title),
+                    "daily releases" in t_lower,
+                    title.startswith(("[Release]", "[Repack]", "[Crack]", "[Bypass]", "[NFO]", "[Update]"))
+                ])
 
-            if clean_author == "automoderator" or any(re.search(pat, t_lower) for pat in EXCLUDE_PATTERNS):
+                if not is_valid_release:
+                    seen_ids.add(entry_id)
+                    newly_seen.append(entry_id)
+                    continue
+
+                if created_utc:
+                    try:
+                        now_utc = datetime.now(timezone.utc).timestamp()
+                        if (now_utc - created_utc) > 48 * 3600:
+                            seen_ids.add(entry_id)
+                            newly_seen.append(entry_id)
+                            continue
+                    except Exception:
+                        pass
+
+                kl_dt = datetime.fromtimestamp(created_utc, timezone.utc).astimezone(KL_TZ) if created_utc else datetime.now(KL_TZ)
+                kl_time = f"`{kl_dt.strftime('%a, %b %d, %Y %I:%M %p GMT+8')}`"
+
+                new_items.append({
+                    "source": "Reddit r/CrackWatch",
+                    "title": title,
+                    "link": link,
+                    "author": author,
+                    "time_kl": kl_time,
+                    "nfo_url": nfo_url,
+                    "steam_url": steam_url,
+                    "size": release_size
+                })
                 seen_ids.add(entry_id)
                 newly_seen.append(entry_id)
-                continue
 
-            is_voices38 = clean_author in ("voices38", "v0ices38") or any(v in t_lower for v in ["voices38", "v0ices38"])
+        # SECONDARY FALLBACK PARSER: RSS XML
+        else:
+            feed_xml = fetch_reddit_feed("https://old.reddit.com/r/CrackWatch/new.rss")
+            if not feed_xml:
+                return []
+            entries = re.findall(r'<entry>(.*?)</entry>', feed_xml, re.DOTALL)
+            if not entries:
+                return []
 
-            is_valid_release = any([
-                is_voices38,
-                bool(nfo_url),
-                re.search(GROUPS_PATTERN, t_lower),
-                re.search(KEYWORDS_PATTERN, t_lower),
-                re.search(SCENE_TAG_PATTERN, title),
-                "daily releases" in t_lower,
-                title.startswith(("[Release]", "[Repack]", "[Crack]", "[Bypass]", "[NFO]", "[Update]"))
-            ])
+            if not seen_ids:
+                logger.info("Initializing r/CrackWatch tracker with current entries...")
+                init_ids = []
+                for e in entries:
+                    id_m = re.search(r'<id>(.*?)</id>', e)
+                    if id_m:
+                        init_ids.append(id_m.group(1).strip())
+                cw_state["seen_ids"] = update_seen_list([], init_ids, max_len=500)
+                return []
 
-            if not is_valid_release:
+            for e in entries:
+                id_m = re.search(r'<id>(.*?)</id>', e)
+                entry_id = id_m.group(1).strip() if id_m else ""
+                if not entry_id or entry_id in seen_ids:
+                    continue
+
+                title_m = re.search(r'<title>(.*?)</title>', e)
+                title = html.unescape(title_m.group(1).strip()) if title_m else ""
+
+                link_m = re.search(r'<link\s+href="([^"]+)"', e)
+                link = link_m.group(1).strip() if link_m else ""
+
+                upd_m = re.search(r'<updated>(.*?)</updated>', e)
+                updated = upd_m.group(1).strip() if upd_m else ""
+
+                author_m = re.search(r'<author>\s*<name>(.*?)</name>', e)
+                author = author_m.group(1).strip() if author_m else "CrackWatch"
+
+                content_m = re.search(r'<content[^>]*>(.*?)</content>', e, re.DOTALL)
+                content_raw = html.unescape(content_m.group(1)) if content_m else ""
+
+                nfo_m = re.search(r'href=[\'"](https?://[^\'"]+\.(?:png|jpg|jpeg|webp)|https?://(?:i\.)?ibb\.co/[^\'"]+)[\'"][^>]*>NFO', content_raw, re.I)
+                nfo_url = nfo_m.group(1) if nfo_m else None
+
+                steam_m = re.search(r'href=[\'"](https?://store\.steampowered\.com/app/\d+[^/\'"]*)', content_raw)
+                steam_url = steam_m.group(1) if steam_m else None
+
+                size_m = re.search(r'Release Size:\s*([0-9.]+\s*[MGT]B)', content_raw, re.I)
+                release_size = size_m.group(1) if size_m else None
+
+                t_lower = title.lower()
+                clean_author = re.sub(r'^/?u/', '', author.strip().lower())
+
+                if clean_author == "automoderator" or any(re.search(pat, t_lower) for pat in EXCLUDE_PATTERNS):
+                    seen_ids.add(entry_id)
+                    newly_seen.append(entry_id)
+                    continue
+
+                is_voices38 = clean_author in ("voices38", "v0ices38") or any(v in t_lower for v in ["voices38", "v0ices38"])
+                is_valid_release = any([
+                    is_voices38,
+                    bool(nfo_url),
+                    re.search(GROUPS_PATTERN, t_lower),
+                    re.search(KEYWORDS_PATTERN, t_lower),
+                    re.search(SCENE_TAG_PATTERN, title),
+                    "daily releases" in t_lower,
+                    title.startswith(("[Release]", "[Repack]", "[Crack]", "[Bypass]", "[NFO]", "[Update]"))
+                ])
+
+                if not is_valid_release:
+                    seen_ids.add(entry_id)
+                    newly_seen.append(entry_id)
+                    continue
+
+                if updated:
+                    try:
+                        dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                        now = datetime.now(timezone.utc)
+                        if (now - dt).total_seconds() > 48 * 3600:
+                            seen_ids.add(entry_id)
+                            newly_seen.append(entry_id)
+                            continue
+                    except Exception:
+                        pass
+
+                kl_time = parse_pubdate_to_kl(updated)
+                new_items.append({
+                    "source": "Reddit r/CrackWatch",
+                    "title": title,
+                    "link": link,
+                    "author": author,
+                    "time_kl": kl_time,
+                    "nfo_url": nfo_url,
+                    "steam_url": steam_url,
+                    "size": release_size
+                })
                 seen_ids.add(entry_id)
                 newly_seen.append(entry_id)
-                continue
 
-            # Prevent posting old historical submissions (e.g. approved from mod queue weeks later)
-            if updated:
-                try:
-                    dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
-                    now = datetime.now(timezone.utc)
-                    if (now - dt).total_seconds() > 48 * 3600:
-                        seen_ids.add(entry_id)
-                        newly_seen.append(entry_id)
-                        continue
-                except Exception:
-                    pass
-
-            kl_time = parse_pubdate_to_kl(updated)
-            new_items.append({
-                "source": "Reddit r/CrackWatch",
-                "title": title,
-                "link": link,
-                "author": author,
-                "time_kl": kl_time,
-                "nfo_url": nfo_url,
-                "steam_url": steam_url,
-                "size": release_size
-            })
-            seen_ids.add(entry_id)
-            newly_seen.append(entry_id)
+        if newly_seen:
+            cw_state["seen_ids"] = update_seen_list(cw_state.get("seen_ids", []), newly_seen, max_len=500)
+        return list(reversed(new_items))
 
         if newly_seen:
             cw_state["seen_ids"] = update_seen_list(cw_state.get("seen_ids", []), newly_seen, max_len=500)

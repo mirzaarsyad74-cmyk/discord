@@ -946,6 +946,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <label for="mongodb_uri">🍃 MongoDB Atlas Connection URI</label>
         <input type="text" id="mongodb_uri" placeholder="mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority">
       </div>
+      <div class="field-group" style="grid-column: span 2;">
+        <label for="reddit_proxy">🛡️ Reddit Proxy Relay (Optional, e.g. http://ip:port)</label>
+        <input type="text" id="reddit_proxy" placeholder="Leave empty for Auto-Proxy rotation">
+      </div>
       <div class="field-group">
         <label for="admin_password">Update Admin Password</label>
         <input type="text" id="admin_password" placeholder="Leave blank to keep unchanged">
@@ -1027,6 +1031,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         if (document.getElementById('mongodb_uri')) {
           document.getElementById('mongodb_uri').value = currentConfig.mongodb_uri || '';
         }
+        if (document.getElementById('reddit_proxy')) {
+          document.getElementById('reddit_proxy').value = currentConfig.reddit_proxy || '';
+        }
       } catch (e) {
         console.error('Error loading config:', e);
       }
@@ -1053,6 +1060,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       const mongoEl = document.getElementById('mongodb_uri');
       if (mongoEl) {
         payload.mongodb_uri = mongoEl.value.trim();
+      }
+
+      const proxyEl = document.getElementById('reddit_proxy');
+      if (proxyEl) {
+        payload.reddit_proxy = proxyEl.value.trim();
       }
 
       const newPw = document.getElementById('admin_password').value.trim();
