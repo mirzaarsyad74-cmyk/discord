@@ -182,7 +182,7 @@ def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, tot
     now_kl = datetime.now(KL_TZ)
     date_str = now_kl.strftime("%d %b %Y, %I:%M %p GMT+8").upper()
     badge_steam = "OFFICIAL STEAM CHARTS × STEAMUNLOCK WANNABE"
-    badge_catalog = f"📚 {total_suo_count:,}+ TOTAL PRE-INSTALLED GAMES IN CATALOG"
+    badge_catalog = f"📚 TOTAL GAMES IN CATALOG: {total_suo_count:,}"
 
     bbox_b1 = draw.textbbox((0, 0), badge_steam, font=font_badge)
     b1_w = bbox_b1[2] - bbox_b1[0] + 28
@@ -207,7 +207,7 @@ def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, tot
     draw.text(((W - (t_bbox[2] - t_bbox[0])) // 2, 64), title_text, font=font_title, fill=(255, 255, 255, 255))
 
     # Subtitle with Catalog Context
-    sub_text = f"VERIFIED AVAILABLE IN CATALOG • 100% PRE-INSTALLED • UPDATED: {date_str}"
+    sub_text = f"TOTAL GAMES IN CATALOG: {total_suo_count:,} • 100% PRE-INSTALLED • UPDATED: {date_str}"
     s_bbox = draw.textbbox((0, 0), sub_text, font=font_sub)
     draw.text(((W - (s_bbox[2] - s_bbox[0])) // 2, 110), sub_text, font=font_sub, fill=(148, 163, 184, 255))
 
@@ -353,7 +353,7 @@ def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, tot
 
     # Bottom Footer
     draw.line([(40, H - 36), (W - 40, H - 36)], fill=(30, 41, 59, 220), width=1)
-    draw.text((40, H - 24), "AUTOMATED BY RELEASE MONITOR BOT • STEAM CHARTS & PRE-INSTALLED GAME RADAR", font=font_footer, fill=(100, 116, 139, 255))
+    draw.text((40, H - 24), f"AUTOMATED BY RELEASE MONITOR BOT • TOTAL GAMES IN CATALOG: {total_suo_count:,} • STEAM CHARTS & PRE-INSTALLED RADAR", font=font_footer, fill=(100, 116, 139, 255))
     draw.text((W - 380, H - 24), "GMT+8 KUALA LUMPUR TIME • VERIFIED STEAM DATA", font=font_footer, fill=(100, 116, 139, 255))
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -362,7 +362,7 @@ def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, tot
     return output_path
 
 
-def check_steam_top10_radar(state: dict, force: bool = False) -> Optional[Dict[str, Any]]:
+def check_steam_top10_radar(state: dict, force: bool = False, **kwargs) -> Optional[Dict[str, Any]]:
     """
     Checks if the hourly Steam Top 10 SUO Radar needs to be posted.
     Strictly aligns with the clock hours: triggers at the nearest top-of-the-hour (e.g., 4:00 AM, 5:00 AM, etc.).

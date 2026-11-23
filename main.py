@@ -1001,14 +1001,13 @@ async def run_webhook_daemon(webhook_url: str):
                 except Exception as e:
                     logger.error(f"Error checking Daily Steam Release Radar: {e}")
 
-            # Check Steam Top 10 SUO Radar (12:00 PM GMT+8)
+            # Check Steam Top 10 SUO Radar (Every 1 hour on the nearest hour: 4:00 AM, 5:00 AM, etc.)
             if current_cfg.get("watch_steam_top10_suo", True):
                 try:
                     from steam_top10_radar import create_steam_top10_radar_embed
-                    top10_hour = current_cfg.get("steam_top10_radar_hour_gmt8", 12)
-                    top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar, target_hour=top10_hour)
+                    top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar)
                     if top10_data:
-                        logger.info(f"Posting Steam Top 10 SUO Radar for {top10_data['date_display']} via Webhook...")
+                        logger.info(f"Posting Hourly Steam Top 10 SUO Radar for {top10_data['date_display']} via Webhook...")
                         embed = create_steam_top10_radar_embed(top10_data)
                         embed.set_image(url="attachment://steam_top10_radar.png")
                         success = safe_webhook_send(

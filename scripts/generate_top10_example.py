@@ -175,7 +175,7 @@ def render_top10_poster(games, output_path: str, total_suo_count: int = 6967):
     now_kl = datetime.now(KL_TZ)
     date_str = now_kl.strftime("%d %b %Y, %I:%M %p GMT+8").upper()
     badge_steam = "OFFICIAL STEAM CHARTS × STEAMUNLOCK WANNABE"
-    badge_catalog = f"📚 {total_suo_count:,}+ TOTAL PRE-INSTALLED GAMES IN CATALOG"
+    badge_catalog = f"📚 TOTAL GAMES IN CATALOG: {total_suo_count:,}"
 
     bbox_b1 = draw.textbbox((0, 0), badge_steam, font=font_badge)
     b1_w = bbox_b1[2] - bbox_b1[0] + 28
@@ -200,7 +200,7 @@ def render_top10_poster(games, output_path: str, total_suo_count: int = 6967):
     draw.text(((W - (t_bbox[2] - t_bbox[0])) // 2, 64), title_text, font=font_title, fill=(255, 255, 255, 255))
 
     # Subtitle with Catalog Context
-    sub_text = f"VERIFIED AVAILABLE IN CATALOG • 100% PRE-INSTALLED • UPDATED: {date_str}"
+    sub_text = f"TOTAL GAMES IN CATALOG: {total_suo_count:,} • 100% PRE-INSTALLED • UPDATED: {date_str}"
     s_bbox = draw.textbbox((0, 0), sub_text, font=font_sub)
     draw.text(((W - (s_bbox[2] - s_bbox[0])) // 2, 110), sub_text, font=font_sub, fill=(148, 163, 184, 255))
 
