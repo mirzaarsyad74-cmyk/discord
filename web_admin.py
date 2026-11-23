@@ -757,6 +757,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
       <div class="card">
         <div class="card-info">
+          <div class="card-title">🏆 Steam Top 10 Downloads (SUO)</div>
+          <div class="card-desc">Daily 1080p infographic poster of Top 10 Steam Hits available on SUO with total catalog count badge.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="watch_steam_top10_suo">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="card">
+        <div class="card-info">
           <div class="card-title">💸 Steam Specials (MYR)</div>
           <div class="card-desc">Featured store promotions with prices formatted in Malaysian Ringgit.</div>
         </div>
@@ -963,6 +974,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
     <div class="actions-row">
       <button class="btn-action" onclick="triggerAction('daily_radar')">🎯 Test Daily Radar Now</button>
+      <button class="btn-action" onclick="triggerAction('top10_radar')">🏆 Trigger Steam Top 10 Poster</button>
       <button class="btn-action" onclick="triggerAction('check_launches')">🚀 Check Steam Launches</button>
       <button class="btn-action" onclick="triggerAction('check_deals')">💸 Check Steam Deals</button>
       <button class="btn-action" onclick="refreshLogs()">🔄 Refresh Live Logs</button>
@@ -991,6 +1003,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       'watch_steam_new_launches',
       'watch_steam_dlc_launches',
       'watch_daily_release_radar',
+      'watch_steam_top10_suo',
       'watch_steam_deals',
       'watch_steam_free_games',
       'watch_steam_versions',

@@ -117,6 +117,8 @@
   "watch_flingtrainer": true,
   "watch_daily_release_radar": true,
   "daily_release_radar_hour_gmt8": 0,
+  "watch_steam_top10_suo": true,
+  "steam_top10_radar_hour_gmt8": 12,
   "watch_csrin": false,
   "enable_global_feed": false,
   "admin_password": "admin",

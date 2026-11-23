@@ -66,6 +66,7 @@ def load_config() -> dict:
         "watch_steam_new_launches": True,
         "watch_steam_dlc_launches": True,
         "watch_daily_release_radar": True,
+        "watch_steam_top10_suo": True,
         "watch_fitgirl": False,
         "watch_dodi": False,
         "watch_crackwatch_reddit": True,
@@ -354,6 +355,21 @@ async def bot_monitor_task():
                 logger.info("Successfully posted Daily Steam Release Radar!")
         except Exception as e:
             logger.error(f"Error checking Daily Steam Release Radar: {e}")
+
+    # Check Steam Top 10 SUO Radar (Every 1 hour on the nearest hour: 4:00 AM, 5:00 AM, etc.)
+    if config.get("watch_steam_top10_suo", True):
+        try:
+            from steam_top10_radar import create_steam_top10_radar_embed
+            top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar)
+            if top10_data:
+                logger.info(f"Posting Hourly Steam Top 10 SUO Radar for {top10_data['date_display']}...")
+                embed = create_steam_top10_radar_embed(top10_data)
+                poster_file = discord.File(top10_data["poster_path"], filename="steam_top10_radar.png")
+                embed.set_image(url="attachment://steam_top10_radar.png")
+                await channel.send(embed=embed, file=poster_file)
+                logger.info("Successfully posted Hourly Steam Top 10 SUO Radar!")
+        except Exception as e:
+            logger.error(f"Error checking Steam Top 10 SUO Radar: {e}")
 
 
     # Check monitored game topics (CS.RIN.RU)
@@ -746,6 +762,7 @@ async def cmd_status(ctx: commands.Context):
     embed.add_field(name="Steam Game Launches", value="**✅ ACTIVE**" if config.get("watch_steam_new_launches", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Steam DLC Launches", value="**✅ ACTIVE**" if config.get("watch_steam_dlc_launches", True) else "❌ Disabled", inline=True)
     embed.add_field(name="Daily Release Radar (12am)", value="**✅ ACTIVE**" if config.get("watch_daily_release_radar", True) else "❌ Disabled", inline=True)
+    embed.add_field(name="Steam Top 10 SUO (Hourly)", value="**✅ ACTIVE (Every 1hr on :00)**" if config.get("watch_steam_top10_suo", True) else "❌ Disabled", inline=True)
     embed.add_field(name="CS.RIN.RU", value="❌ **TURNED OFF**" if not config.get("watch_csrin", False) else f"✅ Active ({len(config.get('topics', []))} topics)", inline=True)
     embed.add_field(name="Check Interval", value=f"`{CHECK_INTERVAL}` seconds", inline=True)
     embed.set_footer(text=f"Serving channel: #{ctx.channel.name}")
@@ -813,6 +830,26 @@ async def cmd_daily_radar(ctx: commands.Context):
 async def slash_daily_radar(interaction: discord.Interaction):
     ctx = await commands.Context.from_interaction(interaction)
     await cmd_daily_radar(ctx)
+
+@bot.command(name="top10")
+async def cmd_top10(ctx: commands.Context):
+    """Manually generates and posts the Steam Top 10 SUO Radar right now."""
+    msg = await ctx.send("⏳ Cross-referencing Steam charts with SUO catalog and rendering 1080p Infographic Poster...")
+    from steam_top10_radar import create_steam_top10_radar_embed
+    top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar, force=True)
+    if top10_data:
+        embed = create_steam_top10_radar_embed(top10_data)
+        poster_file = discord.File(top10_data["poster_path"], filename="steam_top10_radar.png")
+        embed.set_image(url="attachment://steam_top10_radar.png")
+        await msg.delete()
+        await ctx.send(embed=embed, file=poster_file)
+    else:
+        await msg.edit(content="Could not generate Steam Top 10 SUO Radar.")
+
+@bot.tree.command(name="top10", description="Generate and post Steam Top 10 SUO Infographic Radar right now")
+async def slash_top10(interaction: discord.Interaction):
+    ctx = await commands.Context.from_interaction(interaction)
+    await cmd_top10(ctx)
 
 
 # ==============================================================================
@@ -963,6 +1000,31 @@ async def run_webhook_daemon(webhook_url: str):
                             monitor.state.get("daily_release_radar", {}).pop("last_posted_date", None)
                 except Exception as e:
                     logger.error(f"Error checking Daily Steam Release Radar: {e}")
+
+            # Check Steam Top 10 SUO Radar (12:00 PM GMT+8)
+            if current_cfg.get("watch_steam_top10_suo", True):
+                try:
+                    from steam_top10_radar import create_steam_top10_radar_embed
+                    top10_hour = current_cfg.get("steam_top10_radar_hour_gmt8", 12)
+                    top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar, target_hour=top10_hour)
+                    if top10_data:
+                        logger.info(f"Posting Steam Top 10 SUO Radar for {top10_data['date_display']} via Webhook...")
+                        embed = create_steam_top10_radar_embed(top10_data)
+                        embed.set_image(url="attachment://steam_top10_radar.png")
+                        success = safe_webhook_send(
+                            webhook,
+                            embed,
+                            username="Steam Top 10 Downloads",
+                            file_path=top10_data["poster_path"],
+                            file_name="steam_top10_radar.png"
+                        )
+                        if success:
+                            logger.info("Successfully posted Steam Top 10 SUO Radar via webhook!")
+                        else:
+                            logger.warning("Failed to dispatch Steam Top 10 SUO Radar webhook. Will retry on next check.")
+                            monitor.state.get("steam_top10_radar", {}).pop("last_posted_date", None)
+                except Exception as e:
+                    logger.error(f"Error checking Steam Top 10 SUO Radar: {e}")
 
 
             if current_cfg.get("watch_csrin", False):
@@ -1250,6 +1312,7 @@ def start_health_server():
                     ("Steam New Game Launches", config.get("watch_steam_new_launches", True)),
                     ("Steam DLC Launches", config.get("watch_steam_dlc_launches", True)),
                     ("Daily Release Radar (12am GMT+8)", config.get("watch_daily_release_radar", True)),
+                    ("Steam Top 10 SUO Radar (12pm GMT+8)", config.get("watch_steam_top10_suo", True)),
                     ("CS.RIN.RU", config.get("watch_csrin", False)),
                 ] if enabled
             ]
@@ -1368,6 +1431,23 @@ def start_health_server():
                                 file_name="daily_radar.png"
                             )
                         msg = "Daily Steam Release Radar generated & dispatched to Discord!"
+                    elif action == "top10_radar":
+                        logger.info("Admin Web Interface: Manual trigger for Steam Top 10 SUO Radar...")
+                        from steam_top10_radar import check_steam_top10_radar, create_steam_top10_radar_embed
+                        top10_data = check_steam_top10_radar(monitor.state, force=True)
+                        if top10_data and webhook_url:
+                            from discord import SyncWebhook
+                            wb = SyncWebhook.from_url(webhook_url)
+                            embed = create_steam_top10_radar_embed(top10_data)
+                            embed.set_image(url="attachment://steam_top10_radar.png")
+                            safe_webhook_send(
+                                wb,
+                                embed,
+                                username="Steam Top 10 Downloads",
+                                file_path=top10_data["poster_path"],
+                                file_name="steam_top10_radar.png"
+                            )
+                        msg = "Steam Top 10 SUO Infographic Poster generated & dispatched to Discord!"
                     elif action == "check_launches":
                         logger.info("Admin Web Interface: Manual trigger for Steam Launches...")
                         updates = monitor.check_steam_new_launches()
