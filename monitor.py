@@ -1,9 +1,11 @@
 import os
 import re
+import time
 import json
 import hashlib
 import logging
 import urllib.parse
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import requests
@@ -26,7 +28,40 @@ class ForumMonitor:
     def __init__(self, scraper: CsRinScraper, state_file: str = STATE_FILE):
         self.scraper = scraper
         self.state_file = state_file
+        self._mongo_client = None
+        self._last_cloud_sync: float = 0.0
+        self.is_dirty: bool = False
+        self._neon_exceeded_quota: bool = False
         self.state: Dict[str, Any] = self._load_state()
+
+    def _get_mongodb_uri(self) -> str:
+        """Resolves MongoDB Atlas connection string from environment variables or config.json."""
+        uri = os.getenv("MONGODB_URI", "").strip() or os.getenv("MONGO_URL", "").strip()
+        if not uri:
+            cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if os.path.exists(cfg_path):
+                try:
+                    with open(cfg_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                        uri = cfg.get("mongodb_uri", "").strip()
+                except Exception:
+                    pass
+        return uri
+
+    def _get_mongo_collection(self, collection_name: str = "bot_state"):
+        """Returns a pymongo collection for MongoDB Atlas if configured."""
+        uri = self._get_mongodb_uri()
+        if not uri:
+            return None
+        try:
+            from pymongo import MongoClient
+            if self._mongo_client is None:
+                self._mongo_client = MongoClient(uri, serverSelectionTimeoutMS=4000)
+            db = self._mongo_client["game_release_monitor"]
+            return db[collection_name]
+        except Exception as e:
+            logger.warning(f"MongoDB Atlas connection error: {e}")
+            return None
 
     def _get_neon_connection_string(self) -> str:
         """Resolves Neon PostgreSQL connection string from environment variables or config.json."""
@@ -44,6 +79,8 @@ class ForumMonitor:
 
     def _query_neon(self, query: str, params: Optional[List[Any]] = None) -> Optional[Dict[str, Any]]:
         """Executes a SQL query against Neon's serverless HTTP API without requiring PostgreSQL native drivers."""
+        if self._neon_exceeded_quota:
+            return None
         conn_str = self._get_neon_connection_string()
         if not conn_str:
             return None
@@ -63,6 +100,10 @@ class ForumMonitor:
             res = requests.post(endpoint, headers=headers, json=payload, timeout=8)
             if res.status_code == 200:
                 return res.json()
+            elif res.status_code == 402:
+                if not self._neon_exceeded_quota:
+                    logger.warning("Neon compute unit limit reached (HTTP 402). Disabling Neon to prevent log spam.")
+                self._neon_exceeded_quota = True
             else:
                 logger.warning(f"Neon HTTP SQL returned HTTP {res.status_code}: {res.text[:120]}")
         except Exception as e:
@@ -86,29 +127,26 @@ class ForumMonitor:
         return url, key
 
     def _load_state(self) -> Dict[str, Any]:
-        """Loads state from Neon Cloud Database (primary), Supabase (fallback), or local state.json."""
-        # 1. Primary: Neon Cloud Database
-        if self._get_neon_connection_string():
+        """Loads state from MongoDB Atlas (primary), Supabase (secondary), Neon, or local state.json."""
+        # 1. Primary: MongoDB Atlas
+        mongo_col = self._get_mongo_collection("bot_state")
+        if mongo_col is not None:
             try:
-                res_data = self._query_neon(
-                    "SELECT value FROM bot_state WHERE key = $1",
-                    params=["main_state"]
-                )
-                if res_data and "rows" in res_data and len(res_data["rows"]) > 0:
-                    cloud_state = res_data["rows"][0].get("value")
-                    if cloud_state and isinstance(cloud_state, dict):
-                        logger.info("⚡ Successfully loaded persistent bot state from Neon Cloud Database!")
-                        try:
-                            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-                            with open(self.state_file, "w", encoding="utf-8") as f:
-                                json.dump(cloud_state, f, indent=2, ensure_ascii=False)
-                        except Exception:
-                            pass
-                        return cloud_state
+                doc = mongo_col.find_one({"key": "main_state"})
+                if doc and "value" in doc and isinstance(doc["value"], dict):
+                    logger.info("🍃 Successfully loaded persistent bot state from MongoDB Atlas!")
+                    cloud_state = doc["value"]
+                    try:
+                        os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+                        with open(self.state_file, "w", encoding="utf-8") as f:
+                            json.dump(cloud_state, f, indent=2, ensure_ascii=False)
+                    except Exception:
+                        pass
+                    return cloud_state
             except Exception as e:
-                logger.warning(f"Could not load state from Neon, falling back: {e}")
+                logger.warning(f"Could not load state from MongoDB Atlas, falling back: {e}")
 
-        # 2. Secondary Fallback: Supabase Cloud Database
+        # 2. Secondary: Supabase Cloud Database
         supa_url, supa_key = self._get_supabase_credentials()
         if supa_url and supa_key:
             try:
@@ -136,7 +174,28 @@ class ForumMonitor:
             except Exception as e:
                 logger.warning(f"Could not load state from Supabase, falling back to local file: {e}")
 
-        # 3. Local fallback
+        # 3. Tertiary: Neon Cloud Database
+        if not self._neon_exceeded_quota and self._get_neon_connection_string():
+            try:
+                res_data = self._query_neon(
+                    "SELECT value FROM bot_state WHERE key = $1",
+                    params=["main_state"]
+                )
+                if res_data and "rows" in res_data and len(res_data["rows"]) > 0:
+                    cloud_state = res_data["rows"][0].get("value")
+                    if cloud_state and isinstance(cloud_state, dict):
+                        logger.info("⚡ Successfully loaded persistent bot state from Neon Cloud Database!")
+                        try:
+                            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+                            with open(self.state_file, "w", encoding="utf-8") as f:
+                                json.dump(cloud_state, f, indent=2, ensure_ascii=False)
+                        except Exception:
+                            pass
+                        return cloud_state
+            except Exception as e:
+                logger.warning(f"Could not load state from Neon, falling back: {e}")
+
+        # 4. Local fallback
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, "r", encoding="utf-8") as f:
@@ -145,8 +204,12 @@ class ForumMonitor:
                 logger.error(f"Error reading state file {self.state_file}: {e}")
         return {"topics": {}, "subforums": {}}
 
-    def save_state(self):
-        """Saves state to local state.json and syncs to Neon Cloud Database (primary) and Supabase (fallback)."""
+    def save_state(self, force: bool = False):
+        """
+        Saves state to local state.json and syncs to Cloud Database (MongoDB Atlas / Supabase / Neon).
+        Implements smart dirty-tracking and debouncing: only writes to cloud if force=True, or is_dirty,
+        or at least 5 minutes have elapsed, eliminating unnecessary database load.
+        """
         # 1. Save local file cache
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
         try:
@@ -155,8 +218,54 @@ class ForumMonitor:
         except Exception as e:
             logger.error(f"Error writing state file: {e}")
 
-        # 2. Primary: Sync to Neon Cloud Database
-        if self._get_neon_connection_string():
+        # 2. Check if cloud sync is needed
+        now = time.time()
+        if not force and not self.is_dirty and (now - self._last_cloud_sync < 300):
+            return
+
+        synced = False
+
+        # 2a. Primary: MongoDB Atlas
+        mongo_col = self._get_mongo_collection("bot_state")
+        if mongo_col is not None:
+            try:
+                mongo_col.update_one(
+                    {"key": "main_state"},
+                    {"$set": {"key": "main_state", "value": self.state, "updated_at": datetime.now(timezone.utc)}},
+                    upsert=True
+                )
+                self._last_cloud_sync = now
+                self.is_dirty = False
+                synced = True
+            except Exception as e:
+                logger.warning(f"Failed to sync state to MongoDB Atlas: {e}")
+
+        # 2b. Secondary: Supabase Cloud Database
+        if not synced:
+            supa_url, supa_key = self._get_supabase_credentials()
+            if supa_url and supa_key:
+                try:
+                    headers = {
+                        "apikey": supa_key,
+                        "Authorization": f"Bearer {supa_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=merge-duplicates"
+                    }
+                    res = requests.post(
+                        f"{supa_url}/rest/v1/bot_state",
+                        headers=headers,
+                        json={"key": "main_state", "value": self.state},
+                        timeout=8
+                    )
+                    if res.status_code in (200, 201):
+                        self._last_cloud_sync = now
+                        self.is_dirty = False
+                        synced = True
+                except Exception as e:
+                    logger.warning(f"Failed to sync state to Supabase: {e}")
+
+        # 2c. Tertiary: Neon Cloud Database (if not exceeded quota)
+        if not synced and not self._neon_exceeded_quota and self._get_neon_connection_string():
             try:
                 upsert_q = (
                     "INSERT INTO bot_state (key, value) "
@@ -165,30 +274,12 @@ class ForumMonitor:
                     "SET value = EXCLUDED.value, updated_at = NOW() "
                     "RETURNING key"
                 )
-                self._query_neon(upsert_q, params=["main_state", json.dumps(self.state)])
+                res = self._query_neon(upsert_q, params=["main_state", json.dumps(self.state)])
+                if res:
+                    self._last_cloud_sync = now
+                    self.is_dirty = False
             except Exception as e:
                 logger.warning(f"Failed to sync state to Neon: {e}")
-
-        # 3. Secondary Fallback: Sync to Supabase Cloud Database (if configured)
-        supa_url, supa_key = self._get_supabase_credentials()
-        if supa_url and supa_key:
-            try:
-                headers = {
-                    "apikey": supa_key,
-                    "Authorization": f"Bearer {supa_key}",
-                    "Content-Type": "application/json",
-                    "Prefer": "resolution=merge-duplicates"
-                }
-                res = requests.post(
-                    f"{supa_url}/rest/v1/bot_state",
-                    headers=headers,
-                    json={"key": "main_state", "value": self.state},
-                    timeout=8
-                )
-                if res.status_code not in (200, 201):
-                    logger.warning(f"Supabase sync status: {res.status_code}")
-            except Exception as e:
-                logger.warning(f"Failed to sync state to Supabase: {e}")
 
 
     @staticmethod

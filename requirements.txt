@@ -4,3 +4,5 @@ beautifulsoup4>=4.12.3
 python-dotenv>=1.0.1
 curl_cffi>=0.7.0
 Pillow>=10.0.0
+pymongo>=4.6.0
+dnspython>=2.6.0

@@ -34,6 +34,64 @@ mem_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
 logging.getLogger().addHandler(mem_handler)
 
 
+_mongo_admin_client = None
+_neon_admin_quota_exceeded = False
+
+
+def get_mongodb_uri(cfg: Optional[Dict[str, Any]] = None) -> str:
+    """Resolves MongoDB Atlas connection string."""
+    uri = os.getenv("MONGODB_URI", "").strip() or os.getenv("MONGO_URL", "").strip()
+    if not uri and cfg:
+        uri = cfg.get("mongodb_uri", "").strip()
+    if not uri:
+        cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    uri = data.get("mongodb_uri", "").strip()
+            except Exception:
+                pass
+    return uri
+
+
+def get_mongodb_collection(collection_name: str = "bot_config", cfg: Optional[Dict[str, Any]] = None):
+    """Returns a pymongo collection for MongoDB Atlas if configured."""
+    global _mongo_admin_client
+    uri = get_mongodb_uri(cfg)
+    if not uri:
+        return None
+    try:
+        from pymongo import MongoClient
+        if _mongo_admin_client is None:
+            _mongo_admin_client = MongoClient(uri, serverSelectionTimeoutMS=4000)
+        db = _mongo_admin_client["game_release_monitor"]
+        return db[collection_name]
+    except Exception as e:
+        logger.debug(f"MongoDB connection error in admin: {e}")
+        return None
+
+
+def get_supabase_credentials(cfg: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
+    """Resolves Supabase URL and Key."""
+    url = os.getenv("SUPABASE_URL", "").strip()
+    key = os.getenv("SUPABASE_KEY", "").strip()
+    if (not url or not key) and cfg:
+        url = url or cfg.get("supabase_url", "").strip()
+        key = key or cfg.get("supabase_key", "").strip()
+    if not url or not key:
+        cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    url = url or data.get("supabase_url", "").strip()
+                    key = key or data.get("supabase_key", "").strip()
+            except Exception:
+                pass
+    return url, key
+
+
 def get_neon_connection_string(cfg: Optional[Dict[str, Any]] = None) -> str:
     """Resolves Neon PostgreSQL connection string."""
     conn_str = os.getenv("NEON_DATABASE_URL", "").strip() or os.getenv("DATABASE_URL", "").strip()
@@ -53,6 +111,9 @@ def get_neon_connection_string(cfg: Optional[Dict[str, Any]] = None) -> str:
 
 def query_neon(query: str, params: Optional[List[Any]] = None, cfg: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """Executes a query against Neon's serverless HTTP API."""
+    global _neon_admin_quota_exceeded
+    if _neon_admin_quota_exceeded:
+        return None
     conn_str = get_neon_connection_string(cfg)
     if not conn_str:
         return None
@@ -72,6 +133,8 @@ def query_neon(query: str, params: Optional[List[Any]] = None, cfg: Optional[Dic
         res = requests.post(endpoint, headers=headers, json=payload, timeout=8)
         if res.status_code == 200:
             return res.json()
+        elif res.status_code == 402:
+            _neon_admin_quota_exceeded = True
     except Exception as e:
         logger.debug(f"Neon query error: {e}")
     return None
@@ -79,7 +142,8 @@ def query_neon(query: str, params: Optional[List[Any]] = None, cfg: Optional[Dic
 
 def load_effective_config() -> Dict[str, Any]:
     """
-    Loads config from local config.json and merges cloud config stored in Neon DB (if present).
+    Loads config from local config.json and merges cloud config stored in MongoDB Atlas,
+    Supabase, or Neon DB (if present).
     This ensures web UI changes persist across Koyeb rebuilds and restarts.
     """
     cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
@@ -91,25 +155,54 @@ def load_effective_config() -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Error loading local config.json: {e}")
 
-    # Query Neon Cloud DB for persisted bot_config
-    try:
-        neon_res = query_neon("SELECT value FROM bot_state WHERE key = $1", params=["bot_config"], cfg=local_cfg)
-        if neon_res and neon_res.get("rows") and len(neon_res["rows"]) > 0:
-            cloud_cfg = neon_res["rows"][0].get("value")
-            if isinstance(cloud_cfg, dict):
-                # Merge cloud settings over local settings
-                for k, v in cloud_cfg.items():
+    # 1. Primary: MongoDB Atlas
+    mongo_col = get_mongodb_collection("bot_config", cfg=local_cfg)
+    if mongo_col is not None:
+        try:
+            doc = mongo_col.find_one({"key": "bot_config"})
+            if doc and "value" in doc and isinstance(doc["value"], dict):
+                for k, v in doc["value"].items():
                     local_cfg[k] = v
-                logger.info("⚡ Successfully synced dynamic bot configuration from Neon Cloud Database!")
-    except Exception as e:
-        logger.debug(f"Could not fetch cloud config from Neon: {e}")
+                logger.info("🍃 Successfully synced dynamic bot configuration from MongoDB Atlas!")
+                return local_cfg
+        except Exception as e:
+            logger.debug(f"Could not fetch cloud config from MongoDB Atlas: {e}")
+
+    # 2. Secondary: Supabase Cloud DB
+    supa_url, supa_key = get_supabase_credentials(local_cfg)
+    if supa_url and supa_key:
+        try:
+            headers = {"apikey": supa_key, "Authorization": f"Bearer {supa_key}"}
+            res = requests.get(f"{supa_url}/rest/v1/bot_state?key=eq.bot_config&select=value", headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                if data and isinstance(data, list) and len(data) > 0 and "value" in data[0]:
+                    for k, v in data[0]["value"].items():
+                        local_cfg[k] = v
+                    logger.info("☁️ Successfully synced dynamic bot configuration from Supabase Cloud Database!")
+                    return local_cfg
+        except Exception as e:
+            logger.debug(f"Could not fetch cloud config from Supabase: {e}")
+
+    # 3. Tertiary: Neon Cloud DB
+    if not _neon_admin_quota_exceeded:
+        try:
+            neon_res = query_neon("SELECT value FROM bot_state WHERE key = $1", params=["bot_config"], cfg=local_cfg)
+            if neon_res and neon_res.get("rows") and len(neon_res["rows"]) > 0:
+                cloud_cfg = neon_res["rows"][0].get("value")
+                if isinstance(cloud_cfg, dict):
+                    for k, v in cloud_cfg.items():
+                        local_cfg[k] = v
+                    logger.info("⚡ Successfully synced dynamic bot configuration from Neon Cloud Database!")
+        except Exception as e:
+            logger.debug(f"Could not fetch cloud config from Neon: {e}")
 
     return local_cfg
 
 
 def save_effective_config(new_cfg: Dict[str, Any]):
     """
-    Saves configuration to both local config.json and Neon Cloud Database.
+    Saves configuration to local config.json and syncs to Cloud Databases (MongoDB, Supabase, Neon).
     """
     cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
     try:
@@ -118,19 +211,58 @@ def save_effective_config(new_cfg: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error writing config.json: {e}")
 
-    # Upsert into Neon DB
-    try:
-        upsert_q = (
-            "INSERT INTO bot_state (key, value) "
-            "VALUES ($1, $2::jsonb) "
-            "ON CONFLICT (key) DO UPDATE "
-            "SET value = EXCLUDED.value, updated_at = NOW() "
-            "RETURNING key;"
-        )
-        query_neon(upsert_q, params=["bot_config", json.dumps(new_cfg)], cfg=new_cfg)
-        logger.info("☁️ Persisted bot configuration to Neon Cloud Database!")
-    except Exception as e:
-        logger.warning(f"Could not persist config to Neon: {e}")
+    synced = False
+
+    # 1. Primary: MongoDB Atlas
+    mongo_col = get_mongodb_collection("bot_config", cfg=new_cfg)
+    if mongo_col is not None:
+        try:
+            mongo_col.update_one(
+                {"key": "bot_config"},
+                {"$set": {"key": "bot_config", "value": new_cfg, "updated_at": datetime.now(timezone.utc)}},
+                upsert=True
+            )
+            logger.info("🍃 Persisted bot configuration to MongoDB Atlas!")
+            synced = True
+        except Exception as e:
+            logger.warning(f"Could not persist config to MongoDB Atlas: {e}")
+
+    # 2. Secondary: Supabase Cloud Database
+    supa_url, supa_key = get_supabase_credentials(new_cfg)
+    if supa_url and supa_key:
+        try:
+            headers = {
+                "apikey": supa_key,
+                "Authorization": f"Bearer {supa_key}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates"
+            }
+            res = requests.post(
+                f"{supa_url}/rest/v1/bot_state",
+                headers=headers,
+                json={"key": "bot_config", "value": new_cfg},
+                timeout=8
+            )
+            if res.status_code in (200, 201):
+                logger.info("☁️ Persisted bot configuration to Supabase Cloud Database!")
+                synced = True
+        except Exception as e:
+            logger.warning(f"Could not persist config to Supabase: {e}")
+
+    # 3. Tertiary: Neon DB
+    if not synced and not _neon_admin_quota_exceeded:
+        try:
+            upsert_q = (
+                "INSERT INTO bot_state (key, value) "
+                "VALUES ($1, $2::jsonb) "
+                "ON CONFLICT (key) DO UPDATE "
+                "SET value = EXCLUDED.value, updated_at = NOW() "
+                "RETURNING key;"
+            )
+            query_neon(upsert_q, params=["bot_config", json.dumps(new_cfg)], cfg=new_cfg)
+            logger.info("☁️ Persisted bot configuration to Neon Cloud Database!")
+        except Exception as e:
+            logger.warning(f"Could not persist config to Neon: {e}")
 
 
 def get_admin_password(cfg: Dict[str, Any]) -> str:
@@ -810,6 +942,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <label for="daily_release_radar_hour_gmt8">Daily Radar Hour (GMT+8, 0 = Midnight)</label>
         <input type="number" id="daily_release_radar_hour_gmt8" min="0" max="23" value="0">
       </div>
+      <div class="field-group" style="grid-column: span 2;">
+        <label for="mongodb_uri">🍃 MongoDB Atlas Connection URI</label>
+        <input type="text" id="mongodb_uri" placeholder="mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority">
+      </div>
       <div class="field-group">
         <label for="admin_password">Update Admin Password</label>
         <input type="text" id="admin_password" placeholder="Leave blank to keep unchanged">
@@ -888,6 +1024,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         if (document.getElementById('daily_release_radar_hour_gmt8')) {
           document.getElementById('daily_release_radar_hour_gmt8').value = currentConfig.daily_release_radar_hour_gmt8 !== undefined ? currentConfig.daily_release_radar_hour_gmt8 : 0;
         }
+        if (document.getElementById('mongodb_uri')) {
+          document.getElementById('mongodb_uri').value = currentConfig.mongodb_uri || '';
+        }
       } catch (e) {
         console.error('Error loading config:', e);
       }
@@ -909,6 +1048,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       const hourVal = parseInt(document.getElementById('daily_release_radar_hour_gmt8').value, 10);
       if (!isNaN(hourVal) && hourVal >= 0 && hourVal <= 23) {
         payload.daily_release_radar_hour_gmt8 = hourVal;
+      }
+
+      const mongoEl = document.getElementById('mongodb_uri');
+      if (mongoEl) {
+        payload.mongodb_uri = mongoEl.value.trim();
       }
 
       const newPw = document.getElementById('admin_password').value.trim();
