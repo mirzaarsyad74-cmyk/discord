@@ -48,6 +48,34 @@ def get_system_font(size: int, bold: bool = False):
         return ImageFont.load_default()
 
 
+def load_suo_icon(target_size: tuple = (72, 72)) -> Optional[Image.Image]:
+    """
+    Loads the official Steam Unlock ONENNABE application icon from disk or bundled assets.
+    Supports C:\\Program Files\\Steam Unlock ONENNABE\\unins000.exe and static img .ico.
+    """
+    candidates = [
+        r"C:\Program Files\Steam Unlock ONENNABE\static\img\steamunlock_wannabe.ico",
+        r"C:\Program Files\Steam Unlock ONENNABE\unins000.exe",
+        os.path.join(os.path.dirname(__file__), "assets", "suo_icon.png"),
+        os.path.join("assets", "suo_icon.png")
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                if path.lower().endswith(".ico") or path.lower().endswith(".png"):
+                    ico = Image.open(path).convert("RGBA")
+                    return ico.resize(target_size, Image.Resampling.LANCZOS)
+            except Exception:
+                pass
+    fallback = os.path.join(os.path.dirname(__file__), "assets", "suo_icon.png")
+    if os.path.exists(fallback):
+        try:
+            return Image.open(fallback).convert("RGBA").resize(target_size, Image.Resampling.LANCZOS)
+        except Exception:
+            pass
+    return None
+
+
 def fetch_top10_suo_games():
     """
     Cross-references official Steam charts (concurrent players & top sellers)
@@ -91,7 +119,29 @@ def fetch_top10_suo_games():
 
     suo_items = external_monitors.fetch_suo_catalog(limit=0)
     total_suo_count = len(suo_items)
-    logger.info(f"Cross-referencing Steam charts against {total_suo_count} SUO games...")
+    online_count = sum(1 for g in suo_items if str(g.get("online_supported")).lower() == "yes")
+    bypass_count = sum(
+        1 for g in suo_items
+        if str(g.get("bypass_supported")).lower() == "yes" or str(g.get("hypervisor_bypass")).lower() == "yes"
+    )
+    total_gb = 0.0
+    for g in suo_items:
+        s = g.get("size_gb", "0")
+        try:
+            total_gb += float(str(s).replace("GB", "").strip())
+        except Exception:
+            pass
+    total_tb = round(total_gb / 1024.0, 2)
+
+    suo_stats = {
+        "total_games": total_suo_count,
+        "total_tb": total_tb,
+        "total_gb": round(total_gb, 1),
+        "online_count": online_count,
+        "bypass_count": bypass_count
+    }
+
+    logger.info(f"Cross-referencing Steam charts against {total_suo_count:,} SUO games ({total_tb} TB)...")
 
     matches = []
     for item in suo_items:
@@ -140,15 +190,35 @@ def fetch_top10_suo_games():
             pass
         m["img_url"] = direct_url
 
-    return top_matches, total_suo_count
+    return top_matches, suo_stats
 
 
-def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, total_suo_count: int = 11133) -> str:
+def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, suo_stats: Optional[Any] = None) -> str:
     """
-    Renders a 1600x1080 high-resolution cyber infographic poster
-    featuring Top 10 Steam Hits available on SUO with the total catalog count badge.
+    Renders a 1600x1160 high-resolution cyber infographic poster
+    featuring Top 10 Steam Hits available on SUO, live ranking movement badges,
+    and a prominent 4-column platform statistics HUD table.
     """
-    W, H = 1600, 1080
+    if isinstance(suo_stats, int):
+        total_suo_count = suo_stats
+        total_tb = 187.65
+        total_gb = 192153.0
+        online_count = 407
+        bypass_count = 208
+    elif isinstance(suo_stats, dict):
+        total_suo_count = suo_stats.get("total_games", 32975)
+        total_tb = suo_stats.get("total_tb", 187.65)
+        total_gb = suo_stats.get("total_gb", 192153.0)
+        online_count = suo_stats.get("online_count", 407)
+        bypass_count = suo_stats.get("bypass_count", 208)
+    else:
+        total_suo_count = 32975
+        total_tb = 187.65
+        total_gb = 192153.0
+        online_count = 407
+        bypass_count = 208
+
+    W, H = 1600, 1160
     img = Image.new("RGBA", (W, H), (13, 17, 23, 255))
     draw = ImageDraw.Draw(img)
 
@@ -171,18 +241,29 @@ def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, tot
     # Fonts
     font_badge = get_system_font(12, bold=True)
     font_title = get_system_font(34, bold=True)
-    font_sub = get_system_font(15, bold=False)
+    font_sub = get_system_font(13, bold=False)
+    font_stat_val = get_system_font(16, bold=True)
+    font_stat_lbl = get_system_font(10, bold=True)
     font_rank = get_system_font(26, bold=True)
     font_card_title = get_system_font(17, bold=True)
     font_card_sub = get_system_font(12, bold=False)
     font_pill = get_system_font(11, bold=True)
     font_footer = get_system_font(11, bold=False)
 
-    # Header Dual Badges (Steam + Total SUO Catalog Count)
+    # Header Dual Badges (Steam + Live Status)
     now_kl = datetime.now(KL_TZ)
     date_str = now_kl.strftime("%d %b %Y, %I:%M %p GMT+8").upper()
     badge_steam = "OFFICIAL STEAM CHARTS × STEAMUNLOCK WANNABE"
-    badge_catalog = f"📚 TOTAL GAMES IN CATALOG: {total_suo_count:,}"
+    badge_catalog = "⚡ REAL-TIME CATALOG ARCHIVE • HOURLY UPDATED"
+
+    # Paste Official Steam Unlock ONENNABE App Icon in Header
+    suo_ico_70 = load_suo_icon((70, 70))
+    if suo_ico_70:
+        draw.rounded_rectangle([58, 30, 58 + 74, 104], radius=12, fill=(18, 23, 32, 255), outline=(48, 54, 61, 230), width=1)
+        img.paste(suo_ico_70, (60, 32), suo_ico_70)
+        rx = W - 58 - 74
+        draw.rounded_rectangle([rx, 30, rx + 74, 104], radius=12, fill=(18, 23, 32, 255), outline=(48, 54, 61, 230), width=1)
+        img.paste(suo_ico_70, (rx + 2, 32), suo_ico_70)
 
     bbox_b1 = draw.textbbox((0, 0), badge_steam, font=font_badge)
     b1_w = bbox_b1[2] - bbox_b1[0] + 28
@@ -193,26 +274,54 @@ def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, tot
     start_bx = (W - total_badges_w) // 2
 
     # Draw Badge 1 (Steam / Gold)
-    draw.rounded_rectangle([start_bx, 22, start_bx + b1_w, 50], radius=14, fill=(30, 41, 59, 255), outline=(245, 158, 11, 220), width=1)
-    draw.text((start_bx + 14, 28), badge_steam, font=font_badge, fill=(245, 158, 11, 255))
+    draw.rounded_rectangle([start_bx, 20, start_bx + b1_w, 48], radius=14, fill=(30, 41, 59, 255), outline=(245, 158, 11, 220), width=1)
+    draw.text((start_bx + 14, 26), badge_steam, font=font_badge, fill=(245, 158, 11, 255))
 
-    # Draw Badge 2 (Total Catalog Count / Emerald)
+    # Draw Badge 2 (Live / Cyan)
     bx2 = start_bx + b1_w + gap_badges
-    draw.rounded_rectangle([bx2, 22, bx2 + b2_w, 50], radius=14, fill=(15, 23, 42, 255), outline=(16, 185, 129, 230), width=1)
-    draw.text((bx2 + 14, 28), badge_catalog, font=font_badge, fill=(52, 211, 153, 255))
+    draw.rounded_rectangle([bx2, 20, bx2 + b2_w, 48], radius=14, fill=(15, 23, 42, 255), outline=(56, 189, 248, 230), width=1)
+    draw.text((bx2 + 14, 26), badge_catalog, font=font_badge, fill=(56, 189, 248, 255))
 
     # Main Title
     title_text = "TOP 10 STEAM HITS (AVAILABLE FOR DOWNLOAD)"
     t_bbox = draw.textbbox((0, 0), title_text, font=font_title)
-    draw.text(((W - (t_bbox[2] - t_bbox[0])) // 2, 64), title_text, font=font_title, fill=(255, 255, 255, 255))
+    draw.text(((W - (t_bbox[2] - t_bbox[0])) // 2, 56), title_text, font=font_title, fill=(255, 255, 255, 255))
 
-    # Subtitle with Catalog Context
-    sub_text = f"TOTAL GAMES IN CATALOG: {total_suo_count:,} • 100% PRE-INSTALLED • UPDATED: {date_str}"
+    # Subtitle
+    sub_text = f"REAL-TIME CATALOG CROSS REFERENCE • UPDATED: {date_str} • HTTPS://STEAMUNLOCKONENNABE.CLICK"
     s_bbox = draw.textbbox((0, 0), sub_text, font=font_sub)
-    draw.text(((W - (s_bbox[2] - s_bbox[0])) // 2, 110), sub_text, font=font_sub, fill=(148, 163, 184, 255))
+    draw.text(((W - (s_bbox[2] - s_bbox[0])) // 2, 98), sub_text, font=font_sub, fill=(148, 163, 184, 255))
+
+    # --- MINI TABLE (4-Column Platform Statistics HUD) ---
+    table_x = 60
+    table_y = 126
+    table_w = 1480
+    gap = 16
+    col_w = (table_w - (3 * gap)) // 4
+    col_h = 66
+
+    stat_cards = [
+        ("📚 TOTAL GAMES IN CATALOG", f"{total_suo_count:,} GAMES", (52, 211, 153), (16, 185, 129, 220)),
+        ("💾 TOTAL STORAGE SIZE", f"{total_tb:,.2f} TB (~{int(total_gb):,} GB)", (251, 191, 36), (245, 158, 11, 220)),
+        ("🌐 ONLINE MULTIPLAYER READY", f"{online_count:,} GAMES READY", (56, 189, 248), (14, 165, 233, 220)),
+        ("⚡ BYPASS / HYPERVISOR", f"{bypass_count:,} TITLES SUPPORTED", (192, 132, 252), (168, 85, 247, 220)),
+    ]
+
+    for idx_c, (lbl, val, val_col, border_col) in enumerate(stat_cards):
+        cx = table_x + idx_c * (col_w + gap)
+        draw.rounded_rectangle(
+            [cx, table_y, cx + col_w, table_y + col_h],
+            radius=10,
+            fill=(18, 23, 32, 255),
+            outline=border_col,
+            width=1
+        )
+        draw.rounded_rectangle([cx + 3, table_y + 10, cx + 7, table_y + col_h - 10], radius=2, fill=val_col)
+        draw.text((cx + 16, table_y + 12), lbl, font=font_stat_lbl, fill=(148, 163, 184, 255))
+        draw.text((cx + 16, table_y + 34), val, font=font_stat_val, fill=val_col)
 
     # Top separator
-    draw.line([(40, 142), (W - 40, 142)], fill=(30, 41, 59, 220), width=1)
+    draw.line([(40, 208), (W - 40, 208)], fill=(30, 41, 59, 220), width=1)
 
     # Card Grid: 2 Columns × 5 Rows
     cols = 2
@@ -220,7 +329,9 @@ def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, tot
     card_w = 720
     card_h = 160
     start_x = 60
-    start_y = 158
+    start_y = 222
+    gap_x = 40
+    gap_y = 16
     gap_x = 40
     gap_y = 16
 
@@ -353,7 +464,12 @@ def render_steam_top10_poster(games: List[Dict[str, Any]], output_path: str, tot
 
     # Bottom Footer
     draw.line([(40, H - 36), (W - 40, H - 36)], fill=(30, 41, 59, 220), width=1)
-    draw.text((40, H - 24), f"AUTOMATED BY RELEASE MONITOR BOT • TOTAL GAMES IN CATALOG: {total_suo_count:,} • STEAM CHARTS & PRE-INSTALLED RADAR", font=font_footer, fill=(100, 116, 139, 255))
+    suo_ico_sm = load_suo_icon((20, 20))
+    if suo_ico_sm:
+        img.paste(suo_ico_sm, (40, H - 28), suo_ico_sm)
+        draw.text((68, H - 24), f"STEAM UNLOCK ONENNABE • TOTAL CATALOG: {total_suo_count:,} GAMES ({total_tb} TB) • STEAM CHARTS RADAR", font=font_footer, fill=(100, 116, 139, 255))
+    else:
+        draw.text((40, H - 24), f"AUTOMATED BY RELEASE MONITOR BOT • TOTAL CATALOG: {total_suo_count:,} GAMES ({total_tb} TB) • STEAM CHARTS & PRE-INSTALLED RADAR", font=font_footer, fill=(100, 116, 139, 255))
     draw.text((W - 380, H - 24), "GMT+8 KUALA LUMPUR TIME • VERIFIED STEAM DATA", font=font_footer, fill=(100, 116, 139, 255))
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -394,7 +510,7 @@ def check_steam_top10_radar(state: dict, force: bool = False, **kwargs) -> Optio
         f"⏰ Triggering Hourly Steam Top 10 SUO Radar for {hour_key} (KL Time: {now_kl.strftime('%I:%M %p')})..."
     )
 
-    games, total_count = fetch_top10_suo_games()
+    games, suo_stats = fetch_top10_suo_games()
     if not games:
         logger.warning("No Steam Top 10 games matched with SUO catalog.")
         return None
@@ -439,7 +555,7 @@ def check_steam_top10_radar(state: dict, force: bool = False, **kwargs) -> Optio
     assets_dir = os.path.join(os.path.dirname(__file__), "assets", "steam_top10")
     poster_path = os.path.join(assets_dir, poster_filename)
 
-    render_steam_top10_poster(games, poster_path, total_suo_count=total_count)
+    render_steam_top10_poster(games, poster_path, suo_stats=suo_stats)
 
     # Save hourly state & current ranks for the next comparison
     radar_state["previous_ranks"] = {g["appid"]: idx + 1 for idx, g in enumerate(games[:10])}
@@ -450,7 +566,8 @@ def check_steam_top10_radar(state: dict, force: bool = False, **kwargs) -> Optio
         "date_key": hour_key,
         "date_display": now_kl.strftime("%A, %b %d, %Y — %I:00 %p GMT+8"),
         "games": games,
-        "total_suo_count": total_count,
+        "total_suo_count": suo_stats.get("total_games", 32975),
+        "suo_stats": suo_stats,
         "poster_path": poster_path
     }
 
@@ -463,17 +580,36 @@ def create_steam_top10_radar_embed(data: Dict[str, Any]):
     import discord
     date_display = data.get("date_display", "")
     games = data.get("games", [])
-    total_count = data.get("total_suo_count", 11133)
+    suo_stats = data.get("suo_stats") or {}
+    total_count = suo_stats.get("total_games", data.get("total_suo_count", 32975))
+    total_tb = suo_stats.get("total_tb", 187.65)
+    total_gb = suo_stats.get("total_gb", 192153.0)
+    online_count = suo_stats.get("online_count", 407)
+    bypass_count = suo_stats.get("bypass_count", 208)
 
     embed = discord.Embed(
         title=f"🏆 Steam Top 10 Downloads — Available on SteamUnlock Wannabe",
         description=(
             f"Here are the top trending games on Steam right now that are verified available for "
-            f"instant pre-installed download on **[SteamUnlock Wannabe](https://steamunlockonennabe.click/)** "
-            f"(Total catalog archive: **{total_count:,}+ games**)!\n"
-            f"📅 *Updated: {date_display} (GMT+8)*"
+            f"instant pre-installed download on **[SteamUnlock Wannabe](https://steamunlockonennabe.click/)**!\n"
+            f"📅 *Live Update: {date_display} (GMT+8)*"
         ),
         color=0xF59E0B  # Cyber Gold
+    )
+
+    # Mini Table: Platform Catalog & Archive Health HUD
+    hud_table = (
+        "```yaml\n"
+        f"📚 Total Games in Catalog : {total_count:,} Games\n"
+        f"💾 Total Storage Size     : {total_tb:,.2f} Terabytes (~{int(total_gb):,} GB)\n"
+        f"🌐 Online Ready Titles    : {online_count:,} Games Supported\n"
+        f"⚡ Bypass / Hypervisor    : {bypass_count:,} Games Supported\n"
+        "```"
+    )
+    embed.add_field(
+        name="📊 Platform Archive Statistics",
+        value=hud_table,
+        inline=False
     )
 
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
