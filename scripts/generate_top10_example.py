@@ -131,7 +131,7 @@ def load_suo_icon(target_size: tuple = (72, 72)) -> Image.Image:
 
 
 def fetch_top10_suo_games():
-    print("Fetching Steam Charts & Top Sellers...")
+    print("Fetching Steam Charts...")
     steam_ranks = {}
     try:
         url_charts = "https://api.steampowered.com/ISteamChartsService/GetGamesByConcurrentPlayers/v1/"
@@ -145,28 +145,6 @@ def fetch_top10_suo_games():
                 }
     except Exception as e:
         print("Error fetching Steam charts:", e)
-
-    # Top sellers
-    try:
-        url_sellers = "https://store.steampowered.com/search/results/?query=&start=0&count=100&filter=topsellers&json=1"
-        r_sellers = requests.get(url_sellers, timeout=6)
-        if r_sellers.status_code == 200:
-            for idx, item in enumerate(r_sellers.json().get("items", [])):
-                m = re.search(r'/apps/(\d+)/', item.get("logo", ""))
-                if m:
-                    aid = m.group(1)
-                    if aid in steam_ranks:
-                        steam_ranks[aid]["seller_rank"] = idx + 1
-                        steam_ranks[aid]["seller_name"] = item.get("name")
-                    else:
-                        steam_ranks[aid] = {
-                            "rank": 100 + idx,
-                            "seller_rank": idx + 1,
-                            "seller_name": item.get("name"),
-                            "concurrent": 0
-                        }
-    except Exception as e:
-        print("Error fetching Steam sellers:", e)
 
     print("Fetching SUO catalog...")
     suo_items = external_monitors.fetch_suo_catalog(limit=0)
@@ -194,54 +172,55 @@ def fetch_top10_suo_games():
     }
     print(f"Fetched {total_suo_count} items from SUO ({total_tb} TB).")
 
-    matches = []
-    for item in suo_items:
+    # Sort SUO catalog strictly by download count (Highest Downloads First)
+    suo_items.sort(key=lambda x: int(x.get("downloads", 0)), reverse=True)
+    top_candidates = suo_items[:15]
+
+    top_matches = []
+    for item in top_candidates:
+        if len(top_matches) >= 10:
+            break
         aid = str(item.get("appid"))
-        if aid in steam_ranks:
-            st = steam_ranks[aid]
-            name = item.get("name") or st.get("seller_name", f"Game {aid}")
-            # Filter out non-standalone or free valve games if desired
-            matches.append({
-                "appid": aid,
-                "name": name,
-                "steam_rank": st["rank"],
-                "concurrent": st.get("concurrent", 0),
-                "downloads": item.get("downloads", 0),
-                "size_gb": item.get("size_gb", "N/A"),
-                "online_supported": item.get("online_supported", "No"),
-                "bypass_supported": item.get("bypass_supported", "No"),
-                "img_url": f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{aid}/header.jpg",
-                "store_url": f"https://store.steampowered.com/app/{aid}/",
-                "suo_url": f"https://steamunlockonennabe.click/"
-            })
+        official_name = item.get("name", f"App {aid}")
+        header_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{aid}/header.jpg"
 
-    # Sort primarily by Steam popularity, secondarily by SUO download count
-    matches.sort(key=lambda x: (x["steam_rank"], -x["downloads"]))
-    top_matches = matches[:10]
-
-    # Resolve accurate high-res header artwork for every single game
-    for m in top_matches:
-        aid = m["appid"]
-        direct_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{aid}/header.jpg"
-        try:
-            r_check = requests.get(direct_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2)
-            if r_check.status_code == 200 and len(r_check.content) > 1000:
-                m["img_url"] = direct_url
-                continue
-        except Exception:
-            pass
-        # Fallback to Steam appdetails store API
+        # Check Steam API for official title and high-res header image
         try:
             r_api = requests.get(f"https://store.steampowered.com/api/appdetails?appids={aid}", timeout=3)
             if r_api.status_code == 200:
-                data_info = r_api.json().get(aid, {}).get("data", {})
-                h_img = data_info.get("header_image")
-                if h_img:
-                    m["img_url"] = h_img
-                    continue
+                app_data = r_api.json().get(aid, {}).get("data", {})
+                if app_data:
+                    official_name = app_data.get("name") or official_name
+                    h_img = app_data.get("header_image")
+                    if h_img:
+                        header_url = h_img
         except Exception:
             pass
-        m["img_url"] = direct_url
+
+        # Check live Steam concurrent players
+        concurrent = 0
+        if aid in steam_ranks:
+            concurrent = steam_ranks[aid].get("concurrent", 0)
+        else:
+            try:
+                r_p = requests.get(f"https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid={aid}", timeout=3).json()
+                concurrent = r_p.get("response", {}).get("player_count", 0)
+            except Exception:
+                pass
+
+        top_matches.append({
+            "appid": aid,
+            "name": official_name,
+            "steam_rank": len(top_matches) + 1,
+            "concurrent": concurrent,
+            "downloads": item.get("downloads", 0),
+            "size_gb": item.get("size_gb", "N/A"),
+            "online_supported": item.get("online_supported", "No"),
+            "bypass_supported": item.get("bypass_supported", "No"),
+            "img_url": header_url,
+            "store_url": f"https://store.steampowered.com/app/{aid}/",
+            "suo_url": "https://steamunlockonennabe.click/"
+        })
 
     return top_matches, suo_stats
 

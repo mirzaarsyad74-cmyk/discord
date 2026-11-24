@@ -138,14 +138,14 @@ def load_suo_icon(target_size: tuple = (72, 72)) -> Optional[Image.Image]:
 
 def fetch_top10_suo_games():
     """
-    Cross-references official Steam charts (concurrent players & top sellers)
-    against the SteamUnlock Wannabe (SUO) catalog.
-    Returns (top_10_matched_games, total_suo_catalog_count).
+    Fetches the Top 10 most downloaded games from SteamUnlock Wannabe (SUO)
+    and cross-references each with official live Steam data (player count, high-res artwork, store link).
+    Returns (top_10_games, suo_stats).
     """
     steam_ranks = {}
     try:
         url_charts = "https://api.steampowered.com/ISteamChartsService/GetGamesByConcurrentPlayers/v1/"
-        r_charts = requests.get(url_charts, timeout=8)
+        r_charts = requests.get(url_charts, timeout=6)
         if r_charts.status_code == 200:
             for g in r_charts.json().get("response", {}).get("ranks", []):
                 aid = str(g["appid"])
@@ -155,27 +155,6 @@ def fetch_top10_suo_games():
                 }
     except Exception as e:
         logger.warning(f"Error fetching Steam charts: {e}")
-
-    try:
-        url_sellers = "https://store.steampowered.com/search/results/?query=&start=0&count=100&filter=topsellers&json=1"
-        r_sellers = requests.get(url_sellers, timeout=8)
-        if r_sellers.status_code == 200:
-            for idx, item in enumerate(r_sellers.json().get("items", [])):
-                m = re.search(r'/apps/(\d+)/', item.get("logo", ""))
-                if m:
-                    aid = m.group(1)
-                    if aid in steam_ranks:
-                        steam_ranks[aid]["seller_rank"] = idx + 1
-                        steam_ranks[aid]["seller_name"] = item.get("name")
-                    else:
-                        steam_ranks[aid] = {
-                            "rank": 100 + idx,
-                            "seller_rank": idx + 1,
-                            "seller_name": item.get("name"),
-                            "concurrent": 0
-                        }
-    except Exception as e:
-        logger.warning(f"Error fetching Steam top sellers: {e}")
 
     suo_items = external_monitors.fetch_suo_catalog(limit=0)
     total_suo_count = len(suo_items)
@@ -201,54 +180,57 @@ def fetch_top10_suo_games():
         "bypass_count": bypass_count
     }
 
-    logger.info(f"Cross-referencing Steam charts against {total_suo_count:,} SUO games ({total_tb} TB)...")
+    logger.info(f"Filtering Top 10 most downloaded games across {total_suo_count:,} SUO games ({total_tb} TB)...")
 
-    matches = []
-    for item in suo_items:
+    # Sort SUO catalog strictly by download count (Highest Downloads First)
+    suo_items.sort(key=lambda x: int(x.get("downloads", 0)), reverse=True)
+    top_candidates = suo_items[:15]
+
+    top_matches = []
+    for item in top_candidates:
+        if len(top_matches) >= 10:
+            break
         aid = str(item.get("appid"))
-        if aid in steam_ranks:
-            st = steam_ranks[aid]
-            name = item.get("name") or st.get("seller_name", f"Game {aid}")
-            matches.append({
-                "appid": aid,
-                "name": name,
-                "steam_rank": st["rank"],
-                "concurrent": st.get("concurrent", 0),
-                "downloads": item.get("downloads", 0),
-                "size_gb": item.get("size_gb", "N/A"),
-                "online_supported": item.get("online_supported", "No"),
-                "bypass_supported": item.get("bypass_supported", "No"),
-                "img_url": f"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{aid}/header.jpg",
-                "store_url": f"https://store.steampowered.com/app/{aid}/",
-                "suo_url": "https://steamunlockonennabe.click/"
-            })
+        official_name = item.get("name", f"App {aid}")
+        header_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{aid}/header.jpg"
 
-    # Sort primarily by Steam popularity rank, secondarily by SUO download count
-    matches.sort(key=lambda x: (x["steam_rank"], -x["downloads"]))
-    top_matches = matches[:10]
-
-    # Resolve accurate high-res header artwork for every single game
-    for m in top_matches:
-        aid = m["appid"]
-        direct_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{aid}/header.jpg"
-        try:
-            r_check = requests.get(direct_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2)
-            if r_check.status_code == 200 and len(r_check.content) > 1000:
-                m["img_url"] = direct_url
-                continue
-        except Exception:
-            pass
+        # Check Steam API for official title and high-res header image
         try:
             r_api = requests.get(f"https://store.steampowered.com/api/appdetails?appids={aid}", timeout=3)
             if r_api.status_code == 200:
-                data_info = r_api.json().get(aid, {}).get("data", {})
-                h_img = data_info.get("header_image")
-                if h_img:
-                    m["img_url"] = h_img
-                    continue
+                app_data = r_api.json().get(aid, {}).get("data", {})
+                if app_data:
+                    official_name = app_data.get("name") or official_name
+                    h_img = app_data.get("header_image")
+                    if h_img:
+                        header_url = h_img
         except Exception:
             pass
-        m["img_url"] = direct_url
+
+        # Check live Steam concurrent players
+        concurrent = 0
+        if aid in steam_ranks:
+            concurrent = steam_ranks[aid].get("concurrent", 0)
+        else:
+            try:
+                r_p = requests.get(f"https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid={aid}", timeout=3).json()
+                concurrent = r_p.get("response", {}).get("player_count", 0)
+            except Exception:
+                pass
+
+        top_matches.append({
+            "appid": aid,
+            "name": official_name,
+            "steam_rank": len(top_matches) + 1,
+            "concurrent": concurrent,
+            "downloads": item.get("downloads", 0),
+            "size_gb": item.get("size_gb", "N/A"),
+            "online_supported": item.get("online_supported", "No"),
+            "bypass_supported": item.get("bypass_supported", "No"),
+            "img_url": header_url,
+            "store_url": f"https://store.steampowered.com/app/{aid}/",
+            "suo_url": "https://steamunlockonennabe.click/"
+        })
 
     return top_matches, suo_stats
 
@@ -693,52 +675,6 @@ def create_steam_top10_radar_embed(data: Dict[str, Any]):
         value=hud_table,
         inline=False
     )
-
-    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-
-    # Split into Top 1-5 and Top 6-10 to stay safely under Discord limits
-    part1_lines = []
-    part2_lines = []
-
-    for idx, g in enumerate(games[:10]):
-        medal = medals[idx] if idx < len(medals) else f"#{idx+1}"
-        name = g.get("name", "Unknown Game")
-        store_url = g.get("store_url", "https://store.steampowered.com/")
-        suo_url = g.get("suo_url", "https://steamunlockonennabe.click/")
-        size = g.get("size_gb", "N/A")
-        dls = g.get("downloads", 0)
-        concurrent = g.get("concurrent", 0)
-        is_online = str(g.get("online_supported", "")).lower() == "yes"
-        tag = "🌐 Online" if is_online else "👤 Singleplayer"
-
-        if concurrent > 0:
-            stat_str = f"👥 {concurrent:,} players"
-        else:
-            stat_str = f"📈 Rank #{g.get('steam_rank', idx+1)}"
-
-        rank_badge = g.get("rank_discord", "▬ STILL")
-        line = (
-            f"{medal} **[{name}]({store_url})** `[{rank_badge}]` — `{stat_str} • 📦 {size} • {tag}`\n"
-            f"   🔗 [Steam Store]({store_url}) • ⚡ [Download Pre-Installed]({suo_url}) • 📥 `{dls:,} DLs`"
-        )
-
-        if idx < 5:
-            part1_lines.append(line)
-        else:
-            part2_lines.append(line)
-
-    if part1_lines:
-        embed.add_field(
-            name="🔥 Top 1 — 5 Steam Hits (Pre-Installed)",
-            value="\n".join(part1_lines),
-            inline=False
-        )
-    if part2_lines:
-        embed.add_field(
-            name="🚀 Top 6 — 10 Steam Hits (Pre-Installed)",
-            value="\n".join(part2_lines),
-            inline=False
-        )
 
     embed.set_footer(
         text=f"Official Steam Charts × SteamUnlock Wannabe • {total_count:,}+ Games in Catalog • GMT+8",
