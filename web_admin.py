@@ -974,7 +974,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
     <div class="actions-row">
       <button class="btn-action" onclick="triggerAction('daily_radar')">🎯 Test Daily Radar Now</button>
-      <button class="btn-action" onclick="triggerAction('top10_radar')">🏆 Trigger Steam Top 10 Poster</button>
+      <button class="btn-action" onclick="triggerAction('top10_radar')">🏆 Hourly Top 10 Radar</button>
+      <button class="btn-action" onclick="triggerAction('top10_radar_daily')">🌅 Daily Top 10 (12 AM)</button>
+      <button class="btn-action" onclick="triggerAction('top10_radar_weekly')">📅 Weekly Top 10 (Mon 12 AM)</button>
+      <button class="btn-action" onclick="triggerAction('top10_radar_monthly')">👑 Monthly Top 10 (Month-End)</button>
       <button class="btn-action" onclick="triggerAction('check_launches')">🚀 Check Steam Launches</button>
       <button class="btn-action" onclick="triggerAction('check_deals')">💸 Check Steam Deals</button>
       <button class="btn-action" onclick="refreshLogs()">🔄 Refresh Live Logs</button>

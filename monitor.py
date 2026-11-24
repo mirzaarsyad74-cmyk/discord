@@ -757,12 +757,23 @@ class ForumMonitor:
             self.save_state()
         return result
 
-    def check_steam_top10_radar(self, force: bool = False, **kwargs) -> Optional[Dict[str, Any]]:
-        """Checks and generates the hourly Steam Top 10 SUO Radar (nearest hour: 4am, 5am, etc.)."""
-        from steam_top10_radar import check_steam_top10_radar
-        result = check_steam_top10_radar(self.state, force=force, **kwargs)
+    def check_all_due_steam_top10_radars(self, force_cadence: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Evaluates and generates all due cadences (hourly, daily @ 12am GMT+8, weekly @ Mon 12am, monthly @ month-end 12am).
+        Returns a list of radar dictionaries ready for Discord dispatching.
+        """
+        from steam_top10_radar import check_all_due_steam_top10_radars
+        results = check_all_due_steam_top10_radars(self.state, force_cadence=force_cadence)
+        if results:
+            self.save_state(force=True)
+        return results
+
+    def check_steam_top10_radar(self, force: bool = False, cadence: str = "hourly", **kwargs) -> Optional[Dict[str, Any]]:
+        """Checks and generates Steam Top 10 SUO Radar for a specific cadence."""
+        from steam_top10_radar import check_steam_top10_cadence
+        result = check_steam_top10_cadence(self.state, cadence=cadence, force=force)
         if result:
-            self.save_state()
+            self.save_state(force=True)
         return result
 
 

@@ -356,20 +356,21 @@ async def bot_monitor_task():
         except Exception as e:
             logger.error(f"Error checking Daily Steam Release Radar: {e}")
 
-    # Check Steam Top 10 SUO Radar (Every 1 hour on the nearest hour: 4:00 AM, 5:00 AM, etc.)
+    # Check Steam Top 10 SUO Radars (Hourly, Daily 12am, Weekly Mon 12am, Monthly Month-End 12am)
     if config.get("watch_steam_top10_suo", True):
         try:
             from steam_top10_radar import create_steam_top10_radar_embed
-            top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar)
-            if top10_data:
-                logger.info(f"Posting Hourly Steam Top 10 SUO Radar for {top10_data['date_display']}...")
+            due_radars = await asyncio.to_thread(monitor.check_all_due_steam_top10_radars)
+            for top10_data in due_radars:
+                cadence_name = top10_data.get("cadence_name", "Hourly Radar")
+                logger.info(f"Posting {cadence_name} for {top10_data['date_display']}...")
                 embed = create_steam_top10_radar_embed(top10_data)
                 poster_file = discord.File(top10_data["poster_path"], filename="steam_top10_radar.png")
                 embed.set_image(url="attachment://steam_top10_radar.png")
                 await channel.send(embed=embed, file=poster_file)
-                logger.info("Successfully posted Hourly Steam Top 10 SUO Radar!")
+                logger.info(f"Successfully posted {cadence_name} to Discord!")
         except Exception as e:
-            logger.error(f"Error checking Steam Top 10 SUO Radar: {e}")
+            logger.error(f"Error checking Steam Top 10 SUO Radars: {e}")
 
 
     # Check monitored game topics (CS.RIN.RU)
@@ -514,6 +515,17 @@ async def bot_monitor_task():
 
 @bot.event
 async def on_ready():
+    # Auto-set Bot user avatar if missing
+    try:
+        if bot.user and not bot.user.avatar:
+            icon_path = os.path.join(os.path.dirname(__file__), "assets", "icons", "discord_app_icon.png")
+            if os.path.exists(icon_path):
+                with open(icon_path, "rb") as f:
+                    await bot.user.edit(avatar=f.read())
+                logger.info("Auto-configured Discord Bot user avatar from assets/icons/discord_app_icon.png!")
+    except Exception as e:
+        logger.debug(f"Could not auto-set bot avatar: {e}")
+
     active_monitors = []
     if config.get("watch_steamrip", False):
         active_monitors.append("SteamRIP")
@@ -832,11 +844,14 @@ async def slash_daily_radar(interaction: discord.Interaction):
     await cmd_daily_radar(ctx)
 
 @bot.command(name="top10")
-async def cmd_top10(ctx: commands.Context):
+async def cmd_top10(ctx: commands.Context, cadence: str = "hourly"):
     """Manually generates and posts the Steam Top 10 SUO Radar right now."""
-    msg = await ctx.send("⏳ Cross-referencing Steam charts with SUO catalog and rendering 1080p Infographic Poster...")
+    cadence = cadence.lower().strip()
+    if cadence not in ["hourly", "daily", "weekly", "monthly"]:
+        cadence = "hourly"
+    msg = await ctx.send(f"⏳ Cross-referencing Steam charts with SUO catalog ({cadence.capitalize()}) & rendering Infographic Poster...")
     from steam_top10_radar import create_steam_top10_radar_embed
-    top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar, force=True)
+    top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar, force=True, cadence=cadence)
     if top10_data:
         embed = create_steam_top10_radar_embed(top10_data)
         poster_file = discord.File(top10_data["poster_path"], filename="steam_top10_radar.png")
@@ -844,12 +859,19 @@ async def cmd_top10(ctx: commands.Context):
         await msg.delete()
         await ctx.send(embed=embed, file=poster_file)
     else:
-        await msg.edit(content="Could not generate Steam Top 10 SUO Radar.")
+        await msg.edit(content=f"Could not generate Steam Top 10 ({cadence}) Radar.")
 
 @bot.tree.command(name="top10", description="Generate and post Steam Top 10 SUO Infographic Radar right now")
-async def slash_top10(interaction: discord.Interaction):
+@discord.app_commands.describe(cadence="Cadence to generate (hourly, daily, weekly, monthly)")
+@discord.app_commands.choices(cadence=[
+    discord.app_commands.Choice(name="Hourly Radar", value="hourly"),
+    discord.app_commands.Choice(name="Daily 24H Recap (12 AM GMT+8)", value="daily"),
+    discord.app_commands.Choice(name="Weekly Chart (Mon 12 AM GMT+8)", value="weekly"),
+    discord.app_commands.Choice(name="Monthly Hall of Fame (Month-End 12 AM GMT+8)", value="monthly"),
+])
+async def slash_top10(interaction: discord.Interaction, cadence: str = "hourly"):
     ctx = await commands.Context.from_interaction(interaction)
-    await cmd_top10(ctx)
+    await cmd_top10(ctx, cadence=cadence)
 
 
 # ==============================================================================
@@ -873,6 +895,18 @@ async def run_webhook_daemon(webhook_url: str):
     except Exception as e:
         logger.error(f"Invalid DISCORD_WEBHOOK_URL: {e}")
         return
+
+    # Auto-set Webhook profile avatar if available
+    try:
+        icon_path = os.path.join(os.path.dirname(__file__), "assets", "icons", "discord_app_icon.png")
+        if os.path.exists(icon_path):
+            import base64
+            with open(icon_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+            requests.patch(webhook_url, json={"avatar": f"data:image/png;base64,{b64}"}, headers={"Content-Type": "application/json"}, timeout=6)
+            logger.info("Auto-configured Discord Webhook avatar from assets/icons/discord_app_icon.png!")
+    except Exception as e:
+        logger.debug(f"Could not auto-set webhook avatar: {e}")
 
     # Initial check on startup
     for topic_raw in topics:
@@ -1001,29 +1035,29 @@ async def run_webhook_daemon(webhook_url: str):
                 except Exception as e:
                     logger.error(f"Error checking Daily Steam Release Radar: {e}")
 
-            # Check Steam Top 10 SUO Radar (Every 1 hour on the nearest hour: 4:00 AM, 5:00 AM, etc.)
+            # Check Steam Top 10 SUO Radars (Hourly, Daily 12am, Weekly Mon 12am, Monthly Month-End 12am)
             if current_cfg.get("watch_steam_top10_suo", True):
                 try:
                     from steam_top10_radar import create_steam_top10_radar_embed
-                    top10_data = await asyncio.to_thread(monitor.check_steam_top10_radar)
-                    if top10_data:
-                        logger.info(f"Posting Hourly Steam Top 10 SUO Radar for {top10_data['date_display']} via Webhook...")
+                    due_radars = await asyncio.to_thread(monitor.check_all_due_steam_top10_radars)
+                    for top10_data in due_radars:
+                        cadence_name = top10_data.get("cadence_name", "Hourly Radar")
+                        logger.info(f"Posting {cadence_name} for {top10_data['date_display']} via Webhook...")
                         embed = create_steam_top10_radar_embed(top10_data)
                         embed.set_image(url="attachment://steam_top10_radar.png")
                         success = safe_webhook_send(
                             webhook,
                             embed,
-                            username="Steam Top 10 Downloads",
+                            username=f"Steam Top 10 ({cadence_name})",
                             file_path=top10_data["poster_path"],
                             file_name="steam_top10_radar.png"
                         )
                         if success:
-                            logger.info("Successfully posted Steam Top 10 SUO Radar via webhook!")
+                            logger.info(f"Successfully posted {cadence_name} via webhook!")
                         else:
-                            logger.warning("Failed to dispatch Steam Top 10 SUO Radar webhook. Will retry on next check.")
-                            monitor.state.get("steam_top10_radar", {}).pop("last_posted_date", None)
+                            logger.warning(f"Failed to dispatch {cadence_name} webhook. Will retry on next check.")
                 except Exception as e:
-                    logger.error(f"Error checking Steam Top 10 SUO Radar: {e}")
+                    logger.error(f"Error checking Steam Top 10 SUO Radars: {e}")
 
 
             if current_cfg.get("watch_csrin", False):
@@ -1430,23 +1464,31 @@ def start_health_server():
                                 file_name="daily_radar.png"
                             )
                         msg = "Daily Steam Release Radar generated & dispatched to Discord!"
-                    elif action == "top10_radar":
-                        logger.info("Admin Web Interface: Manual trigger for Steam Top 10 SUO Radar...")
+                    elif action.startswith("top10_radar"):
+                        cadence = "hourly"
+                        if "daily" in action:
+                            cadence = "daily"
+                        elif "weekly" in action:
+                            cadence = "weekly"
+                        elif "monthly" in action:
+                            cadence = "monthly"
+                        logger.info(f"Admin Web Interface: Manual trigger for Steam Top 10 ({cadence})...")
                         from steam_top10_radar import check_steam_top10_radar, create_steam_top10_radar_embed
-                        top10_data = check_steam_top10_radar(monitor.state, force=True)
+                        top10_data = check_steam_top10_radar(monitor.state, force=True, cadence=cadence)
                         if top10_data and webhook_url:
                             from discord import SyncWebhook
                             wb = SyncWebhook.from_url(webhook_url)
                             embed = create_steam_top10_radar_embed(top10_data)
                             embed.set_image(url="attachment://steam_top10_radar.png")
+                            cadence_name = top10_data.get("cadence_name", "Hourly Radar")
                             safe_webhook_send(
                                 wb,
                                 embed,
-                                username="Steam Top 10 Downloads",
+                                username=f"Steam Top 10 ({cadence_name})",
                                 file_path=top10_data["poster_path"],
                                 file_name="steam_top10_radar.png"
                             )
-                        msg = "Steam Top 10 SUO Infographic Poster generated & dispatched to Discord!"
+                        msg = f"Steam Top 10 ({cadence.capitalize()}) Infographic Poster generated & dispatched to Discord!"
                     elif action == "check_launches":
                         logger.info("Admin Web Interface: Manual trigger for Steam Launches...")
                         updates = monitor.check_steam_new_launches()
